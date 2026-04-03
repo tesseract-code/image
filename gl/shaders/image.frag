@@ -199,39 +199,37 @@ bool should_skip_processing(vec3 rgb, float alpha) {
 // Main
 // ---------------------------------------------------------------------------
 void main() {
-    // Step 1: Sample texture
     vec4 texColor = sample_texture();
-    vec3 rgb      = texColor.rgb;
-    float alpha   = texColor.a;
+    vec3 rgb = texColor.rgb;
+    float alpha = texColor.a;
 
-    // Early exit optimization: if no processing requested, return directly
     if (should_skip_processing(rgb, alpha)) {
         fragColor = texColor;
         return;
     }
 
-    // Step 2: Normalize to [0, 1]
+    // 1. Normalize range
     rgb = normalize_range(rgb);
 
-    // Steps 3-4: Apply intensity transform and colormap
+    // 2. LUT / Colormap (in linear space)
     if (use_cmap || lut_enabled) {
         float intensity = extract_luminance(rgb);
         intensity = apply_intensity_transform(intensity);
         rgb = apply_colormap(rgb, intensity);
     }
 
-    // Step 5: Contrast & brightness
-    rgb = apply_contrast_brightness(rgb);
-
-    // Step 6: Gamma correction
+    // 3. Gamma correction (BEFORE tone mapping)
     rgb = apply_gamma(rgb);
 
-    // Step 7: Color balance
+    // 4. Contrast & brightness (tone mapping)
+    rgb = apply_contrast_brightness(rgb);
+
+    // 5. Color balance (after gamma)
     rgb = apply_color_balance(rgb);
 
-    // Step 8: Invert
+    // 6. Invert
     rgb = apply_invert(rgb);
 
-    // Step 9: Final output
+    // 7. Final output
     fragColor = finalize_output(rgb, alpha);
 }
