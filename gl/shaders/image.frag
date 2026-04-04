@@ -6,12 +6,12 @@
 // Processing pipeline (refactored into logical function blocks):
 //
 //   1. Texture sample
-//   2. Normalization        [vmin, vmax] → [0, 1]
+//   2. Normalize range
 //   3. LUT / data transform  log | sqrt | square  (on scalar intensity)
 //   4. Colormap              intensity → RGB via LUT texture
-//   5. Contrast & brightness
-//   6. Gamma correction
-//   7. Color balance
+//   5. Gamma correction
+//   6. Contrast & brightness (tone mapping)
+//   7. Color balance (after gamma)
 //   8. Invert
 //   9. Output clamp & alpha
 //
@@ -99,12 +99,12 @@ float apply_lut(float x) {
 // Processing Pipeline Functions
 // ---------------------------------------------------------------------------
 
-// Step 1: Sample texture
+// Sample texture
 vec4 sample_texture() {
     return texture(imageTexture, fragTexCoord);
 }
 
-// Step 2: Normalize RGB to [0, 1] range
+// Normalize RGB to [0, 1] range
 vec3 normalize_range(vec3 rgb) {
     float range = norm_vmax - norm_vmin;
     if (abs(range) > EPSILON) {
@@ -113,7 +113,7 @@ vec3 normalize_range(vec3 rgb) {
     return rgb;
 }
 
-// Step 3a: Extract luminance for intensity-based processing
+// Extract luminance for intensity-based processing
 float extract_luminance(vec3 rgb) {
     // For monochrome inputs R == G == B; dot product degenerates to rgb.r.
     // For RGB inputs we want a luminance scalar before the data transform.
@@ -121,7 +121,7 @@ float extract_luminance(vec3 rgb) {
     return dot(rgb, BT709_LUMINANCE);
 }
 
-// Step 3b: Apply LUT transform to intensity
+// Apply LUT transform to intensity
 float apply_intensity_transform(float intensity) {
     intensity = clamp(intensity, 0.0, 1.0);
     if (lut_enabled) {
@@ -130,7 +130,7 @@ float apply_intensity_transform(float intensity) {
     return intensity;
 }
 
-// Step 4: Apply colormap or reconstruct RGB from transformed intensity
+// Apply colormap or reconstruct RGB from transformed intensity
 vec3 apply_colormap(vec3 rgb, float intensity) {
     if (use_cmap) {
         // Replace rgb entirely via colormap lookup
@@ -146,7 +146,7 @@ vec3 apply_colormap(vec3 rgb, float intensity) {
     return rgb;
 }
 
-// Step 5: Apply contrast and brightness adjustments
+// Apply contrast and brightness adjustments
 vec3 apply_contrast_brightness(vec3 rgb) {
     // Clamp inputs first — upstream ops can push values outside [0, 1]
     // and unbounded values interact badly with extreme contrast settings.
@@ -155,7 +155,7 @@ vec3 apply_contrast_brightness(vec3 rgb) {
     return rgb;
 }
 
-// Step 6: Apply gamma correction
+// Apply gamma correction
 vec3 apply_gamma(vec3 rgb) {
     // Guard against negative base — pow() on negative values is undefined
     // in GLSL for non-integer exponents.
@@ -165,12 +165,12 @@ vec3 apply_gamma(vec3 rgb) {
     return rgb;
 }
 
-// Step 7: Apply color balance
+// Apply color balance
 vec3 apply_color_balance(vec3 rgb) {
     return rgb * color_balance;
 }
 
-// Step 8: Apply inversion
+// Apply inversion
 vec3 apply_invert(vec3 rgb) {
     if (invert) {
         rgb = 1.0 - rgb;
@@ -178,7 +178,7 @@ vec3 apply_invert(vec3 rgb) {
     return rgb;
 }
 
-// Step 9: Final output clamping
+// Final output clamping
 vec4 finalize_output(vec3 rgb, float alpha) {
     return vec4(clamp(rgb, 0.0, 1.0), alpha);
 }
@@ -208,28 +208,18 @@ void main() {
         return;
     }
 
-    // 1. Normalize range
     rgb = normalize_range(rgb);
 
-    // 2. LUT / Colormap (in linear space)
+    // LUT / Colormap (in linear space)
     if (use_cmap || lut_enabled) {
         float intensity = extract_luminance(rgb);
         intensity = apply_intensity_transform(intensity);
         rgb = apply_colormap(rgb, intensity);
     }
 
-    // 3. Gamma correction (BEFORE tone mapping)
     rgb = apply_gamma(rgb);
-
-    // 4. Contrast & brightness (tone mapping)
     rgb = apply_contrast_brightness(rgb);
-
-    // 5. Color balance (after gamma)
     rgb = apply_color_balance(rgb);
-
-    // 6. Invert
     rgb = apply_invert(rgb);
-
-    // 7. Final output
     fragColor = finalize_output(rgb, alpha);
 }
