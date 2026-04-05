@@ -1,22 +1,23 @@
 """Shader management module for loading and validating shader files."""
 
 from pathlib import Path
+from types import MappingProxyType
 
 SHADER_DIR = Path(__file__).parent
 
-type ShaderMap = dict[str, Path]
+type ShaderMap = MappingProxyType[str, Path]
 
-IMAGE_SHADERS: ShaderMap = {
+IMAGE_SHADERS: ShaderMap = MappingProxyType({
     "image_vertex": SHADER_DIR / "image.vert",
     "image_fragment": SHADER_DIR / "image.frag",
-}
+})
 
-COLORBAR_SHADERS: ShaderMap = {
+COLORBAR_SHADERS: ShaderMap = MappingProxyType({
     "colorbar_vertex": SHADER_DIR / "colorbar.vert",
     "colorbar_fragment": SHADER_DIR / "colorbar.frag",
-}
+})
 
-SHADERS: ShaderMap = IMAGE_SHADERS | COLORBAR_SHADERS
+SHADERS: ShaderMap = MappingProxyType(IMAGE_SHADERS | COLORBAR_SHADERS)
 
 
 def validate_shader_paths(shaders: dict[str, Path]) -> None:
