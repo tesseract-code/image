@@ -7,20 +7,24 @@ SHADER_DIR = Path(__file__).parent
 
 type ShaderMap = MappingProxyType[str, Path]
 
-IMAGE_SHADERS: ShaderMap = MappingProxyType({
-    "image_vertex": SHADER_DIR / "image.vert",
-    "image_fragment": SHADER_DIR / "image.frag",
-})
+IMAGE_SHADERS: ShaderMap = MappingProxyType(
+    {
+        "image_vertex": SHADER_DIR / "image.vert",
+        "image_fragment": SHADER_DIR / "image.frag",
+    }
+)
 
-COLORBAR_SHADERS: ShaderMap = MappingProxyType({
-    "colorbar_vertex": SHADER_DIR / "colorbar.vert",
-    "colorbar_fragment": SHADER_DIR / "colorbar.frag",
-})
+COLORBAR_SHADERS: ShaderMap = MappingProxyType(
+    {
+        "colorbar_vertex": SHADER_DIR / "colorbar.vert",
+        "colorbar_fragment": SHADER_DIR / "colorbar.frag",
+    }
+)
 
 SHADERS: ShaderMap = MappingProxyType(IMAGE_SHADERS | COLORBAR_SHADERS)
 
 
-def validate_shader_paths(shaders: dict[str, Path]) -> None:
+def validate_shader_paths(shaders: MappingProxyType[str, Path]) -> None:
     """
     Validate that all shader files exist.
 
