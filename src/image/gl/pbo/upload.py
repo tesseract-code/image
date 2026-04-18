@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import itertools
 import logging
 import threading
@@ -8,12 +9,114 @@ from typing import Optional
 import numpy as np
 
 from image.gl.backend import GL
-from image.gl.pbo import UnpackPBO
+from image.gl.errors import GLUploadError, gl_error_check, GLMemoryError
+from image.gl.pbo import PBO
 from image.gl.pbo.constants import _NO_BUFFER
 from image.gl.pbo.strategy import PBOBufferingStrategy
+from image.gl.pbo.utils import extract_pointer
+from image.gl.types import GLintptr, GLsizeiptr, GLbitfield
 from pycore.log.ctx import ContextAdapter
 
 logger = ContextAdapter(logging.getLogger(__name__), {})
+
+class UnpackPBO(PBO):
+    """
+    PBO specialised for pixel uploads (GL_PIXEL_UNPACK_BUFFER).
+
+    Provides orphan + map for writing (prepare_and_map) and unmap.
+    Used exclusively by PBOUploadManager.
+    """
+
+    _target: int = GL.GL_PIXEL_UNPACK_BUFFER
+
+    def prepare_and_map(
+            self,
+            size_bytes: int,
+            height: int,
+            width: int,
+            channels: int,
+            dtype: np.dtype = np.dtype("uint8"),
+    ) -> np.ndarray:
+        """
+        Orphan the buffer, map it for writing, and return a shaped ndarray.
+
+        The returned array is a direct view into GPU-mapped memory.  Writes
+        are visible to the GPU after unmap() is called.
+
+        Args:
+            size_bytes : Total allocation in bytes.
+                         Must equal height * width * channels * dtype.itemsize.
+            height, width, channels : Frame dimensions and channel count.
+            dtype      : Element type of the mapped array (default uint8).
+
+        Returns:
+            C-contiguous ndarray of shape (height, width, channels).
+
+        Raises:
+            GLUploadError : If size_bytes does not match the expected byte count.
+            GLMemoryError : If glMapBufferRange returns NULL.
+        """
+        expected = height * width * channels * dtype.itemsize
+        if expected != size_bytes:
+            raise GLUploadError(
+                "PBO size mismatch: size_bytes=%d does not match "
+                "height×width×channels×itemsize=%d." % (size_bytes, expected)
+            )
+
+        GL.glBindBuffer(self._target, self.id)
+
+        with gl_error_check("PBO orphan and map (write)", GLMemoryError):
+            GL.glBufferData(self._target, size_bytes, None, GL.GL_STREAM_DRAW)
+            self.capacity = size_bytes
+            ptr_obj = GL.glMapBufferRange(
+                self._target,
+                GLintptr(0),
+                GLsizeiptr(size_bytes),
+                GLbitfield(
+                    GL.GL_MAP_WRITE_BIT | GL.GL_MAP_INVALIDATE_BUFFER_BIT),
+            )
+
+        if not ptr_obj:
+            GL.glBindBuffer(self._target, _NO_BUFFER)
+            raise GLMemoryError(
+                "glMapBufferRange returned NULL for PBO %d (size=%d)."
+                % (self.id, size_bytes)
+            )
+
+        ptr_addr = extract_pointer(ptr_obj)
+        if not ptr_addr:
+            GL.glBindBuffer(self._target, _NO_BUFFER)
+            raise GLMemoryError(
+                "Mapped pointer is NULL for PBO %d." % self.id
+            )
+
+        c_byte_type = ctypes.c_uint8 * size_bytes
+        c_ptr = ctypes.cast(ptr_addr, ctypes.POINTER(c_byte_type))
+        arr_bytes = np.ctypeslib.as_array(c_ptr.contents)
+        arr_shaped = arr_bytes.view(dtype=dtype).reshape(height, width,
+                                                         channels)
+
+        self.is_mapped = True
+        return arr_shaped
+
+    def unmap(self) -> None:
+        """Release the CPU-side mapping so the GPU can DMA-read the buffer."""
+        if not self.is_mapped:
+            return
+        GL.glBindBuffer(self._target, self.id)
+        result = GL.glUnmapBuffer(self._target)
+        if not result:
+            logger.warning(
+                "glUnmapBuffer returned GL_FALSE for PBO %d "
+                "(possible context loss).", self.id
+            )
+        GL.glBindBuffer(self._target, _NO_BUFFER)
+        self.is_mapped = False
+
+    def destroy(self) -> None:
+        if self.id and self.is_mapped:
+            self.unmap()
+        super().destroy()
 
 
 class PBOUploadManager:

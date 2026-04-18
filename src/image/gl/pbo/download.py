@@ -8,13 +8,80 @@ import numpy as np
 from OpenGL import GL as GL
 
 from image.gl.errors import gl_error_check, GLSyncTimeout, GLMemoryError
-from image.gl.pbo import WidgetBridge, PackPBO
-from image.gl.pbo.constants import _NO_SYNC, _NO_BUFFER
+from image.gl.pbo import PBO
+from image.gl.pbo.constants import _NO_SYNC, _NO_BUFFER, _SYNC_TIMEOUT_NS
 from pycore.log.ctx import ContextAdapter
 
 logger = ContextAdapter(logging.getLogger(__name__), {})
 
 FrameCallback = Callable[[np.ndarray, int, int], None]
+
+
+class PackPBO(PBO):
+    """
+    PBO specialised for pixel readback (GL_PIXEL_PACK_BUFFER).
+
+    Carries a fence sync object inserted immediately after the async transfer
+    command (glReadPixels / glGetTexImage) and waited on before the CPU reads
+    the buffer.  This guarantees DMA completion without relying on timing.
+    """
+
+    _target: int = GL.GL_PIXEL_PACK_BUFFER
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fence = _NO_SYNC
+
+    def insert_fence(self) -> None:
+        """
+        Insert a GL_SYNC_GPU_COMMANDS_COMPLETE fence into the command stream.
+        Call immediately after glReadPixels / glGetTexImage.
+        Any previous fence for this slot is deleted first.
+        """
+        if self.fence is not _NO_SYNC:
+            GL.glDeleteSync(self.fence)
+        self.fence = GL.glFenceSync(GL.GL_SYNC_GPU_COMMANDS_COMPLETE, 0)
+
+    def wait_for_fence(self) -> None:
+        """
+        Block until the fence signals (DMA complete), or raise on timeout/error.
+
+        In the double-buffered pipeline this almost always returns immediately
+        (GL_ALREADY_SIGNALED) because a full frame has elapsed.
+
+        GL_SYNC_FLUSH_COMMANDS_BIT ensures the fence command is flushed to the
+        GPU even if no explicit glFlush was called after insertion.
+        """
+        if self.fence is _NO_SYNC:
+            return  # no transfer issued for this slot
+
+        result = GL.glClientWaitSync(
+            self.fence,
+            GL.GL_SYNC_FLUSH_COMMANDS_BIT,
+            _SYNC_TIMEOUT_NS,
+        )
+        GL.glDeleteSync(self.fence)
+        self.fence = _NO_SYNC
+
+        if result == GL.GL_TIMEOUT_EXPIRED:
+            raise GLSyncTimeout(
+                "Fence timeout (%d ns) for PBO %d." % (
+                    _SYNC_TIMEOUT_NS, self.id)
+            )
+        if result == GL.GL_WAIT_FAILED:
+            raise GLMemoryError(
+                "glClientWaitSync GL_WAIT_FAILED for PBO %d." % self.id
+            )
+        # GL_ALREADY_SIGNALED or GL_CONDITION_SATISFIED → success
+
+    def destroy(self) -> None:
+        if self.fence is not _NO_SYNC:
+            try:
+                GL.glDeleteSync(self.fence)
+            except Exception:
+                pass
+            self.fence = _NO_SYNC
+        super().destroy()
 
 
 class PBODownloadManager:
@@ -39,7 +106,7 @@ class PBODownloadManager:
 
     def __init__(
             self,
-            bridge: WidgetBridge,
+            bridge: 'WidgetBridge',
             on_frame_ready: FrameCallback,
     ) -> None:
         """
@@ -268,9 +335,9 @@ class PBODownloadManager:
             )
         GL.glBindBuffer(GL.GL_PIXEL_PACK_BUFFER, _NO_BUFFER)
 
-    def _issue_texture_transfer(
-            self, pbo: PackPBO, pending: tuple[int, int, int]
-    ) -> None:
+    @staticmethod
+    def _issue_texture_transfer(pbo: PackPBO,
+                                pending: tuple[int, int, int]) -> None:
         """
         Bind *pbo* and issue async glGetTexImage into it.
 

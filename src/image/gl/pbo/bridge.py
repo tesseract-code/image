@@ -46,21 +46,54 @@ Download usage
 from __future__ import annotations
 
 import logging
+from typing import runtime_checkable, Protocol
 
 import numpy as np
-
 from PyQt6.QtCore import QObject, pyqtSignal
-from PyQt6.QtGui  import QImage
+from PyQt6.QtGui import QImage
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 
-from image.gl.pbo.core import PBODownloadManager
+from pycore.log.ctx import ContextAdapter
 from qtcore.reference import has_qt_cpp_binding
 
-logger = logging.getLogger(__name__)
+logger = ContextAdapter(logging.getLogger(__name__), {})
 
-# ---------------------------------------------------------------------------
-# QtWidgetBridge
-# ---------------------------------------------------------------------------
+@runtime_checkable
+class WidgetBridge(Protocol):
+    """
+    Duck-typed interface that PBODownloadManager requires from its host.
+
+    Any object that implements these six methods can drive the download
+    manager — QOpenGLWidget, a headless offscreen surface, a test double, etc.
+
+    physical_width / physical_height
+        Framebuffer size in *device* pixels (logical × devicePixelRatio).
+        Must match the viewport dimensions passed to glViewport.
+
+    schedule_update()
+        Ask the host to schedule a repaint (equivalent to QWidget.update()).
+
+    make_current() / done_current()
+        Activate / release the OpenGL context.
+        Called only during cleanup, not during normal paintGL flow.
+
+    is_context_valid()
+        Return True if the GL context still exists and is usable.
+        Called only during cleanup.
+    """
+
+    def physical_width(self) -> int:  ...
+
+    def physical_height(self) -> int:  ...
+
+    def schedule_update(self) -> None: ...
+
+    def make_current(self) -> None: ...
+
+    def done_current(self) -> None: ...
+
+    def is_context_valid(self) -> bool: ...
+
 class QtWidgetBridge:
     """
     Implements WidgetBridge for a QOpenGLWidget.
@@ -73,7 +106,6 @@ class QtWidgetBridge:
     def __init__(self, widget: QOpenGLWidget) -> None:
         self._widget = widget
 
-    # -- WidgetBridge protocol ------------------------------------------
 
     def physical_width(self) -> int:
         return round(self._widget.width() * self._widget.devicePixelRatio())
@@ -104,9 +136,6 @@ class QtWidgetBridge:
             return False
 
 
-# ---------------------------------------------------------------------------
-# QtPBOBridge
-# ---------------------------------------------------------------------------
 class QtPBOBridge(QObject):
     """
     Qt adapter for PBODownloadManager.
@@ -126,18 +155,16 @@ class QtPBOBridge(QObject):
 
     def __init__(self, widget: QOpenGLWidget) -> None:
         super().__init__(widget)
-        self._widget  = widget
-        self._bridge  = QtWidgetBridge(widget)
+        self._widget = widget
+        self._bridge = QtWidgetBridge(widget)
+
+        from image.gl.pbo import PBODownloadManager
         self._manager = PBODownloadManager(
-            bridge         = self._bridge,
-            on_frame_ready = self._on_frame_ready,
+            bridge=self._bridge,
+            on_frame_ready=self._on_frame_ready,
         )
         # Automatic cleanup when the widget's C++ side is destroyed.
         widget.destroyed.connect(self._manager.cleanup)
-
-    # ------------------------------------------------------------------
-    # Public interface — thin delegation to PBODownloadManager
-    # ------------------------------------------------------------------
 
     def initialize(self) -> None:
         """Call once inside initializeGL(). Context is already current."""
@@ -165,7 +192,7 @@ class QtPBOBridge(QObject):
         self._manager.request_capture()
 
     def request_texture_capture(
-        self, texture_id: int, width: int, height: int
+            self, texture_id: int, width: int, height: int
     ) -> None:
         """
         Request a texture download. imageReady fires asynchronously.
@@ -186,12 +213,8 @@ class QtPBOBridge(QObject):
     def capture_height(self) -> int:
         return self._manager.height
 
-    # ------------------------------------------------------------------
-    # Private: numpy → QImage
-    # ------------------------------------------------------------------
-
     def _on_frame_ready(
-        self, arr: np.ndarray, width: int, height: int
+            self, arr: np.ndarray, width: int, height: int
     ) -> None:
         """
         Receives a (H×W×4) uint8 RGBA array from the core, wraps it in a
@@ -212,3 +235,4 @@ class QtPBOBridge(QObject):
             QImage.Format.Format_RGBA8888,
         ).copy()
         self.imageReady.emit(qimage)
+

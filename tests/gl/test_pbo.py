@@ -20,7 +20,7 @@ cause a segfault when numpy tries to read it.
 Coverage
 --------
 PBOBufferingStrategy  — member values, default, from_int, description.
-_extract_pointer      — c_void_p path, mock .value path, null pointer,
+extract_pointer      — c_void_p path, mock .value path, null pointer,
                         extraction failure.
 calculate_pixel_alignment — all format/type branches.
 configure_pixel_storage   — alignment forwarded, extra params set.
@@ -32,7 +32,7 @@ PBO                   — construction, prepare_and_map (shape, dtype, mapping
                         state, size mismatch, null map + unbind), unmap
                         (noop, false return warning, state reset), destroy
                         (noop on id=0, pre-unmap, delete handle, id reset).
-PBOManager            — construction (strategy, deprecated num_pbos shim),
+PBOUploadManager            — construction (strategy, deprecated num_pbos shim),
                         initialize (count, idempotent), bind, unbind,
                         get_next (uninitialised error, round-robin),
                         acquire_next_writeable (delegation, error propagation),
@@ -50,18 +50,17 @@ from unittest.mock import MagicMock, call, patch
 import numpy as np
 import pytest
 
-from cross_platform.qt6_utils.image.gl.error import GLMemoryError, GLUploadError
-from cross_platform.qt6_utils.image.gl.pbo import (
+from image.gl.errors import GLMemoryError, GLUploadError
+from image.gl.pbo import (
     PBO,
     PBOBufferingStrategy,
-    PBOManager,
-    _extract_pointer,
     calculate_pixel_alignment,
     configure_pixel_storage,
     memmove_pbo,
-    write_pbo_buffer,
+    write_pbo_buffer, PBOUploadManager,
 )
-from cross_platform.qt6_utils.image.gl.types import GLenum, GLBuffer, GLint, GLsizeiptr
+from image.gl.pbo.utils import extract_pointer
+from image.gl.types import GLenum, GLBuffer, GLint, GLsizeiptr
 
 _MOD = "cross_platform.qt6_utils.image.gl.pbo"
 
@@ -126,7 +125,7 @@ def pbo_env(gl):
     """
     Full test environment: GL + all module-level dependencies patched.
 
-    Suitable for PBO and PBOManager tests that exercise the full call chain
+    Suitable for PBO and PBOUploadManager tests that exercise the full call chain
     without needing a real GL context, config, or copy infrastructure.
     """
     with (
@@ -193,7 +192,7 @@ class TestPBOBufferingStrategy:
 
 
 # =============================================================================
-# _extract_pointer
+# extract_pointer
 # =============================================================================
 
 class TestExtractPointer:
@@ -204,30 +203,30 @@ class TestExtractPointer:
 
     def test_c_void_p_with_nonzero_value(self):
         ptr = ctypes.c_void_p(0x1000)
-        result = _extract_pointer(ptr)
+        result = extract_pointer(ptr)
         assert result == 0x1000
 
     def test_c_void_p_zero_returns_none(self):
         # c_void_p(0).value is None in ctypes (null pointer representation).
         ptr = ctypes.c_void_p(0)
-        result = _extract_pointer(ptr)
+        result = extract_pointer(ptr)
         assert result is None
 
     def test_mock_with_value_attribute(self):
         obj = MagicMock()
         obj.value = 4096
-        assert _extract_pointer(obj) == 4096
+        assert extract_pointer(obj) == 4096
 
     def test_mock_with_none_value_returns_none(self):
         obj = MagicMock()
         obj.value = None
-        assert _extract_pointer(obj) is None
+        assert extract_pointer(obj) is None
 
     def test_unextractable_object_returns_none(self):
         # An object with no .value and that ctypes.cast rejects → None.
         class _Opaque:
             pass
-        result = _extract_pointer(_Opaque())
+        result = extract_pointer(_Opaque())
         assert result is None
 
 
@@ -663,49 +662,49 @@ class TestPBO:
 
 
 # =============================================================================
-# PBOManager
+# PBOUploadManager
 # =============================================================================
 
-class TestPBOManager:
+class TestPBOUploadManager:
 
     # --- Construction -------------------------------------------------------
 
     def test_default_strategy_is_double(self, pbo_env):
-        mgr = PBOManager()
+        mgr = PBOUploadManager()
         assert mgr.buffer_strategy is PBOBufferingStrategy.DOUBLE
 
     def test_explicit_strategy_stored(self, pbo_env):
-        mgr = PBOManager(buffer_strategy=PBOBufferingStrategy.TRIPLE)
+        mgr = PBOUploadManager(buffer_strategy=PBOBufferingStrategy.TRIPLE)
         assert mgr.buffer_strategy is PBOBufferingStrategy.TRIPLE
 
     def test_num_pbos_shim_selects_correct_strategy(self, pbo_env):
         """Deprecated num_pbos kwarg must be coerced to a strategy."""
-        mgr = PBOManager(num_pbos=3)
+        mgr = PBOUploadManager(num_pbos=3)
         assert mgr.buffer_strategy is PBOBufferingStrategy.TRIPLE
 
     def test_num_pbos_shim_logs_deprecation_warning(self, pbo_env, caplog):
         with caplog.at_level(logging.WARNING, logger=_MOD):
-            PBOManager(num_pbos=2)
+            PBOUploadManager(num_pbos=2)
         assert caplog.records
         assert "deprecated" in caplog.text.lower()
 
     def test_pool_starts_empty(self, pbo_env):
-        assert PBOManager().pbos == []
+        assert PBOUploadManager().pbos == []
 
     # --- initialize ---------------------------------------------------------
 
     def test_initialize_creates_correct_pbo_count_for_double(self, pbo_env):
-        mgr = PBOManager(buffer_strategy=PBOBufferingStrategy.DOUBLE)
+        mgr = PBOUploadManager(buffer_strategy=PBOBufferingStrategy.DOUBLE)
         mgr.initialize()
         assert len(mgr.pbos) == 2
 
     def test_initialize_creates_correct_pbo_count_for_triple(self, pbo_env):
-        mgr = PBOManager(buffer_strategy=PBOBufferingStrategy.TRIPLE)
+        mgr = PBOUploadManager(buffer_strategy=PBOBufferingStrategy.TRIPLE)
         mgr.initialize()
         assert len(mgr.pbos) == 3
 
     def test_initialize_is_idempotent(self, pbo_env):
-        mgr = PBOManager()
+        mgr = PBOUploadManager()
         mgr.initialize()
         first_pbos = list(mgr.pbos)
         mgr.initialize()   # second call must be a no-op
@@ -714,37 +713,37 @@ class TestPBOManager:
         assert pbo_env.glGenBuffers.call_count == 2
 
     def test_initialize_arms_cycle_iterator(self, pbo_env):
-        mgr = PBOManager()
+        mgr = PBOUploadManager()
         mgr.initialize()
         assert mgr._cycle_iter is not None
 
     # --- bind / unbind ------------------------------------------------------
 
     def test_bind_calls_bind_buffer_with_pbo_id(self, pbo_env):
-        PBOManager.bind(GLBuffer(42))
+        PBOUploadManager.bind(GLBuffer(42))
         pbo_env.glBindBuffer.assert_called_with(
             _C["GL_PIXEL_UNPACK_BUFFER"], 42
         )
 
     def test_unbind_calls_bind_buffer_with_zero(self, pbo_env):
-        PBOManager.unbind()
+        PBOUploadManager.unbind()
         pbo_env.glBindBuffer.assert_called_with(_C["GL_PIXEL_UNPACK_BUFFER"], 0)
 
     # --- get_next -----------------------------------------------------------
 
     def test_get_next_raises_when_not_initialized(self, pbo_env):
         with pytest.raises(RuntimeError, match="initialize"):
-            PBOManager().get_next()
+            PBOUploadManager().get_next()
 
     def test_get_next_returns_pbo_instance(self, pbo_env):
-        mgr = PBOManager()
+        mgr = PBOUploadManager()
         mgr.initialize()
         result = mgr.get_next()
         assert isinstance(result, PBO)
 
     def test_get_next_cycles_round_robin(self, pbo_env):
         """After cycling through all PBOs the first one is returned again."""
-        mgr = PBOManager(buffer_strategy=PBOBufferingStrategy.DOUBLE)
+        mgr = PBOUploadManager(buffer_strategy=PBOBufferingStrategy.DOUBLE)
         mgr.initialize()
         p0 = mgr.get_next()
         p1 = mgr.get_next()
@@ -754,7 +753,7 @@ class TestPBOManager:
 
     def test_get_next_is_thread_safe(self, pbo_env):
         """Concurrent get_next calls must not raise or return the same PBO twice."""
-        mgr = PBOManager(buffer_strategy=PBOBufferingStrategy.TRIPLE)
+        mgr = PBOUploadManager(buffer_strategy=PBOBufferingStrategy.TRIPLE)
         mgr.initialize()
 
         results = []
@@ -785,7 +784,7 @@ class TestPBOManager:
         buf, ptr  = _real_mapped_ptr(size)
         pbo_env.glMapBufferRange.return_value = ptr
 
-        mgr = PBOManager()
+        mgr = PBOUploadManager()
         mgr.initialize()
         pbo, arr = mgr.acquire_next_writeable(
             width=W, height=H, channels=C, dtype=dtype
@@ -795,11 +794,11 @@ class TestPBOManager:
 
     def test_acquire_next_writeable_propagates_runtime_error_when_uninit(self, pbo_env):
         with pytest.raises(RuntimeError):
-            PBOManager().acquire_next_writeable(width=4, height=4, channels=3)
+            PBOUploadManager().acquire_next_writeable(width=4, height=4, channels=3)
 
     def test_acquire_next_writeable_propagates_gl_memory_error(self, pbo_env):
         pbo_env.glMapBufferRange.return_value = None
-        mgr = PBOManager()
+        mgr = PBOUploadManager()
         mgr.initialize()
         with pytest.raises(GLMemoryError):
             mgr.acquire_next_writeable(width=4, height=4, channels=3)
@@ -807,7 +806,7 @@ class TestPBOManager:
     # --- cleanup ------------------------------------------------------------
 
     def test_cleanup_calls_delete_buffers_for_each_pbo(self, pbo_env):
-        mgr = PBOManager(buffer_strategy=PBOBufferingStrategy.DOUBLE)
+        mgr = PBOUploadManager(buffer_strategy=PBOBufferingStrategy.DOUBLE)
         mgr.initialize()
         pbo_env.glDeleteBuffers.reset_mock()
         mgr.cleanup()
@@ -815,7 +814,7 @@ class TestPBOManager:
 
     def test_cleanup_deletes_correct_handles(self, pbo_env):
         """Each PBO must be deleted with its own handle, not a neighbour's."""
-        mgr = PBOManager(buffer_strategy=PBOBufferingStrategy.DOUBLE)
+        mgr = PBOUploadManager(buffer_strategy=PBOBufferingStrategy.DOUBLE)
         mgr.initialize()
         ids = [pbo.id for pbo in mgr.pbos]
         pbo_env.glDeleteBuffers.reset_mock()
@@ -827,26 +826,26 @@ class TestPBOManager:
         assert sorted(deleted) == sorted(ids)
 
     def test_cleanup_clears_pbo_list(self, pbo_env):
-        mgr = PBOManager()
+        mgr = PBOUploadManager()
         mgr.initialize()
         mgr.cleanup()
         assert mgr.pbos == []
 
     def test_cleanup_resets_cycle_iterator(self, pbo_env):
-        mgr = PBOManager()
+        mgr = PBOUploadManager()
         mgr.initialize()
         mgr.cleanup()
         assert mgr._cycle_iter is None
 
     def test_cleanup_makes_get_next_raise_again(self, pbo_env):
-        mgr = PBOManager()
+        mgr = PBOUploadManager()
         mgr.initialize()
         mgr.cleanup()
         with pytest.raises(RuntimeError):
             mgr.get_next()
 
     def test_cleanup_idempotent(self, pbo_env):
-        mgr = PBOManager()
+        mgr = PBOUploadManager()
         mgr.initialize()
         mgr.cleanup()
         pbo_env.glDeleteBuffers.reset_mock()
@@ -854,6 +853,6 @@ class TestPBOManager:
         pbo_env.glDeleteBuffers.assert_not_called()
 
     def test_cleanup_noop_before_initialize(self, pbo_env):
-        mgr = PBOManager()
+        mgr = PBOUploadManager()
         mgr.cleanup()   # must not raise
         pbo_env.glDeleteBuffers.assert_not_called()

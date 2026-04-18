@@ -52,17 +52,11 @@ threads.  All ``GL.*`` calls must still be issued from the GL-context thread.
 
 from __future__ import annotations
 
-import logging
-
 from image.gl.types import GLHandle
-from pycore.log.ctx import ContextAdapter
 
 # Sentinels / constants
 _NO_BUFFER = GLHandle(0)
 _NO_SYNC = None
 _SENTINEL = object()  # unique sentinel distinguishable from None
-
 # glClientWaitSync timeout: 100 ms in nanoseconds (~6× a 60 fps frame).
 _SYNC_TIMEOUT_NS = 100_000_000
-
-logger = ContextAdapter(logging.getLogger(__name__), {})

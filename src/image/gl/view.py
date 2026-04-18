@@ -29,11 +29,7 @@ from PyQt6.QtGui import QImage
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 from PyQt6.QtWidgets import QWidget
 
-from image.gl.pbo.bridge import QtPBOBridge
-from image.gl.pbo import PBOUploadManager
-from image.gl.pbo.utils import configure_pixel_storage, memmove_pbo, \
-    write_pbo_buffer
-from image.gl.pbo.strategy import PBOBufferingStrategy
+
 from image.gl.backend import GL, initialize_context
 from image.gl.errors import (
     GLError,
@@ -43,6 +39,9 @@ from image.gl.errors import (
     GLUploadError,
 )
 from image.gl.format import get_gl_texture_spec
+from image.gl.pbo import PBOBufferingStrategy, PBOUploadManager, \
+    configure_pixel_storage, memmove_pbo, write_pbo_buffer
+from image.gl.pbo.bridge import QtPBOBridge
 
 from image.gl.program import ShaderProgramManager
 from image.gl.quad import GeometryManager
@@ -262,10 +261,6 @@ class GLFrameViewer(QOpenGLWidget):
     # ------------------------------------------------------------------
     # Qt GL overrides
     # ------------------------------------------------------------------
-
-    def _save_image(self, image):
-        image.save("screenshot.png")
-
     def initializeGL(self) -> None:
         """
         Set up all OpenGL resources for this widget.
@@ -322,7 +317,7 @@ class GLFrameViewer(QOpenGLWidget):
             self._sync_settings_to_view()
             self._view_manager.handle_resize(self.width(), self.height())
             self.settings.changed.connect(self._on_settings_changed)
-            self._pbo_download_bridge.imageReady.connect(self._save_image)
+            self._pbo_download_bridge.imageReady.connect(self.imageReady.emit)
 
             logger.info(
                 "OpenGL initialisation complete",
