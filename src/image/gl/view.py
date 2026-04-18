@@ -25,9 +25,15 @@ from typing import Optional, Tuple
 
 import numpy as np
 from PyQt6.QtCore import QPointF, Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QImage
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 from PyQt6.QtWidgets import QWidget
 
+from image.gl.pbo.bridge import QtPBOBridge
+from image.gl.pbo import PBOUploadManager
+from image.gl.pbo.utils import configure_pixel_storage, memmove_pbo, \
+    write_pbo_buffer
+from image.gl.pbo.strategy import PBOBufferingStrategy
 from image.gl.backend import GL, initialize_context
 from image.gl.errors import (
     GLError,
@@ -37,12 +43,7 @@ from image.gl.errors import (
     GLUploadError,
 )
 from image.gl.format import get_gl_texture_spec
-from image.gl.pbo import (
-    PBOManager,
-    configure_pixel_storage,
-    memmove_pbo,
-    write_pbo_buffer, PBOBufferingStrategy,
-)
+
 from image.gl.program import ShaderProgramManager
 from image.gl.quad import GeometryManager
 from image.gl.shaders.paths import (
@@ -59,7 +60,7 @@ from image.gl.types import (GLenum, GLbitfield,
                             GLfloat,
                             GLint, GLuint,
                             GLsizei, GLBuffer,
-                            GLTexture)
+                            GLTexture, GLHandle)
 from image.gl.uniform import (
     UniformManager,
     UniformType,
@@ -78,7 +79,7 @@ from image.utils.types import is_standard_image
 from pycore.log.ctx import ContextAdapter
 from pycore.mtcopy import get_global_executor
 from qtcore.monitor import PerfStats, PerformanceMonitor
-from qtcore.reference import has_qt_binding
+from qtcore.reference import has_qt_cpp_binding
 
 logger = ContextAdapter(logging.getLogger(__name__), {})
 
@@ -152,12 +153,9 @@ class GLFrameViewer(QOpenGLWidget):
         """Return the underlying integer for any GL NewType handle."""
         return int(handle)
 
-    frame_changed = pyqtSignal(object)  # payload.meta (FrameStats or similar)
-    gl_error = pyqtSignal(str)
-
-    # ------------------------------------------------------------------
-    # Construction
-    # ------------------------------------------------------------------
+    frameChanged = pyqtSignal(object)  # payload.meta (FrameStats or similar)
+    imageReady = pyqtSignal(QImage)
+    glError = pyqtSignal(str)
 
     def __init__(
             self,
@@ -167,7 +165,7 @@ class GLFrameViewer(QOpenGLWidget):
             parent: Optional[QWidget] = None,
     ) -> None:
         """
-        Initialise the viewer.
+        Initialize the viewer.
 
         Args:
             settings:           Image display settings and shader parameters.
@@ -201,8 +199,9 @@ class GLFrameViewer(QOpenGLWidget):
         self._program_manager: ShaderProgramManager = ShaderProgramManager()
         self._texture_manager: TextureManager = TextureManager()
         self._view_manager: ViewManager = ViewManager()
-        self._pbo_manager: PBOManager = PBOManager(
+        self._pbo_upload_mngr: PBOUploadManager = PBOUploadManager(
             buffer_strategy=buffer_strategy)
+        self._pbo_download_bridge: QtPBOBridge | None = None
         self._geo_manager: GeometryManager = GeometryManager()
 
         # GL state shadow
@@ -264,6 +263,9 @@ class GLFrameViewer(QOpenGLWidget):
     # Qt GL overrides
     # ------------------------------------------------------------------
 
+    def _save_image(self, image):
+        image.save("screenshot.png")
+
     def initializeGL(self) -> None:
         """
         Set up all OpenGL resources for this widget.
@@ -289,7 +291,9 @@ class GLFrameViewer(QOpenGLWidget):
                            GLenum(GL.GL_ONE_MINUS_SRC_ALPHA))
             GL.glEnable(GLenum(GL.GL_FRAMEBUFFER_SRGB))
 
-            self._pbo_manager.initialize()
+            self._pbo_upload_mngr.initialize()
+            self._pbo_download_bridge = QtPBOBridge(self)
+            self._pbo_download_bridge.initialize()
 
             validate_shader_paths(shaders=IMAGE_SHADERS)
             self._program_manager.initialize(
@@ -318,6 +322,7 @@ class GLFrameViewer(QOpenGLWidget):
             self._sync_settings_to_view()
             self._view_manager.handle_resize(self.width(), self.height())
             self.settings.changed.connect(self._on_settings_changed)
+            self._pbo_download_bridge.imageReady.connect(self._save_image)
 
             logger.info(
                 "OpenGL initialisation complete",
@@ -333,12 +338,12 @@ class GLFrameViewer(QOpenGLWidget):
             # — wrap it so callers only need to catch one init-phase type.
             msg = f"GL initialisation failed: {e}"
             logger.error(msg)
-            self.gl_error.emit(msg)
+            self.glError.emit(msg)
             raise GLInitializationError(msg) from e
         except Exception as e:
             msg = f"Unexpected error during GL initialisation: {e}"
             logger.error(msg, exception_type=type(e).__name__)
-            self.gl_error.emit(msg)
+            self.glError.emit(msg)
             raise GLInitializationError(msg) from e
 
     def resizeGL(self, width: GLsizei, height: GLsizei) -> None:
@@ -352,6 +357,7 @@ class GLFrameViewer(QOpenGLWidget):
         logger.debug("Resizing viewport", width=width, height=height)
         GL.glViewport(GLint(0), GLint(0), width, height)
         self._view_manager.handle_resize(width, height)
+        self._pbo_download_bridge.on_resize(width, height)
         self._gl_state.uniforms_dirty = True
         if self._can_render():
             self.update()
@@ -405,6 +411,8 @@ class GLFrameViewer(QOpenGLWidget):
                 finally:
                     self._geo_manager.unbind()
                     self._cleanup_texture_bindings()
+                    self._pbo_download_bridge.capture_now()
+
 
             self._gl_state.program_active = None
 
@@ -412,15 +420,15 @@ class GLFrameViewer(QOpenGLWidget):
             # Texture errors during paint are non-fatal but worth flagging.
             msg = f"Texture error during render: {e}"
             logger.error(msg)
-            self.gl_error.emit(msg)
+            self.glError.emit(msg)
         except GLError as e:
             msg = f"Render error: {e}"
             logger.error(msg)
-            self.gl_error.emit(msg)
+            self.glError.emit(msg)
         except Exception as e:
             msg = f"Unexpected render error: {e}"
             logger.error(msg, exception_type=type(e).__name__)
-            self.gl_error.emit(msg)
+            self.glError.emit(msg)
 
     # ------------------------------------------------------------------
     # Render-readiness guards
@@ -696,7 +704,7 @@ class GLFrameViewer(QOpenGLWidget):
         if should_realloc:
             # Unbind PBO before glTexImage2D so the driver allocates from
             # client memory rather than treating the PBO offset as a pointer.
-            self._pbo_manager.unbind()
+            self._pbo_upload_mngr.unbind()
             self._alloc_image_texture(
                 payload.width,
                 payload.height,
@@ -807,11 +815,11 @@ class GLFrameViewer(QOpenGLWidget):
                 if not payload.is_pinned:
                     memmove_pbo(payload.pbo_id, payload.data)
                 else:
-                    self._pbo_manager.bind(payload.pbo_id)
+                    self._pbo_upload_mngr.bind(payload.pbo_id)
 
                 self._view_manager.set_image_size(payload.width, payload.height)
                 self._upload_image_texture(payload)
-                self._pbo_manager.unbind()
+                self._pbo_upload_mngr.unbind()
                 self._texture_manager.unbind(self._image_texture_unit)
 
                 if not payload.is_pinned:
@@ -848,11 +856,11 @@ class GLFrameViewer(QOpenGLWidget):
 
         try:
             self._upload_frame(payload, repaint=repaint)
-            self.frame_changed.emit(payload.meta)
+            self.frameChanged.emit(payload.meta)
         except (GLUploadError, GLTextureError, GLMemoryError) as e:
             msg = str(e)
             logger.error("Frame processing failed", error=msg)
-            self.gl_error.emit(msg)
+            self.glError.emit(msg)
         finally:
             self._latest_payload = None
             self._pending_frame_update = False
@@ -886,11 +894,11 @@ class GLFrameViewer(QOpenGLWidget):
         except GLTextureError as e:
             msg = f"Colormap update failed: {e}"
             logger.error(msg)
-            self.gl_error.emit(msg)
+            self.glError.emit(msg)
         except Exception as e:
             msg = f"Unexpected error updating colormap: {e}"
             logger.error(msg, exception_type=type(e).__name__)
-            self.gl_error.emit(msg)
+            self.glError.emit(msg)
 
     # ------------------------------------------------------------------
     # Uniforms
@@ -1153,11 +1161,11 @@ class GLFrameViewer(QOpenGLWidget):
                 gl_type=gl_type,
             )
 
-            pbo = self._pbo_manager.get_next()
+            pbo = self._pbo_upload_mngr.get_next()
             logger.debug("Acquired PBO", pbo_id=pbo.id)
 
             self._latest_payload = TextureUploadPayload(
-                pbo_id=GLBuffer(pbo.id),
+                pbo_id=GLBuffer(GLHandle(pbo.id)),
                 data=image,
                 width=GLsizei(w),
                 height=GLsizei(h),
@@ -1180,17 +1188,17 @@ class GLFrameViewer(QOpenGLWidget):
         except GLUploadError as e:
             msg = str(e)
             logger.error("Upload failed", error=msg)
-            self.gl_error.emit(msg)
+            self.glError.emit(msg)
             return False
         except GLError as e:
             msg = f"GL error during upload: {e}"
             logger.error(msg)
-            self.gl_error.emit(msg)
+            self.glError.emit(msg)
             return False
         except Exception as e:
             msg = f"Unexpected upload error: {e}"
             logger.error(msg, exception_type=type(e).__name__)
-            self.gl_error.emit(msg)
+            self.glError.emit(msg)
             return False
 
     def request_pinned_buffer(
@@ -1218,7 +1226,7 @@ class GLFrameViewer(QOpenGLWidget):
         """
         with gl_context(self, "request_pinned_buffer"):
             fmt = pixel_fmt or self.settings.format
-            pbo, arr_shaped = self._pbo_manager.acquire_next_writeable(
+            pbo, arr_shaped = self._pbo_upload_mngr.acquire_next_writeable(
                 width=GLsizei(width),
                 height=GLsizei(height),
                 channels=GLsizei(fmt.channels),
@@ -1332,17 +1340,17 @@ class GLFrameViewer(QOpenGLWidget):
         except GLUploadError as e:
             msg = str(e)
             logger.error("present_pinned failed", error=msg)
-            self.gl_error.emit(msg)
+            self.glError.emit(msg)
             return False
         except GLError as e:
             msg = f"GL error in present_pinned: {e}"
             logger.error(msg)
-            self.gl_error.emit(msg)
+            self.glError.emit(msg)
             return False
         except Exception as e:
             msg = f"Unexpected error in present_pinned: {e}"
             logger.error(msg, exception_type=type(e).__name__)
-            self.gl_error.emit(msg)
+            self.glError.emit(msg)
             return False
 
     def set_range(self, vmin: float, vmax: float) -> None:
@@ -1355,6 +1363,9 @@ class GLFrameViewer(QOpenGLWidget):
         self.settings.update_setting("norm_vmin", vmin)
         self.settings.update_setting("norm_vmax", vmax)
         self.update()
+
+    def get_screentshot(self):
+        self._pbo_download_bridge.request_capture()
 
     # ------------------------------------------------------------------
     # Input handling
@@ -1554,10 +1565,11 @@ class GLFrameViewer(QOpenGLWidget):
                 )
                 self._cmap_texture_id = None
 
-            logger.debug("Cleaning up PBO manager")
-            self._pbo_manager.cleanup()
+            logger.debug("Cleaning up PBO manager(s)")
+            self._pbo_upload_mngr.cleanup()
+            self._pbo_download_bridge.cleanup()
 
-            print("Cleaning up geometry manager")
+            logger.debug("Cleaning up geometry manager")
             self._geo_manager.cleanup()
 
             self._gl_state.reset()
@@ -1574,6 +1586,6 @@ class GLFrameViewer(QOpenGLWidget):
 
     def __del__(self) -> None:
         """Destructor — runs :meth:`cleanup` if the Qt binding is still live."""
-        if has_qt_binding(self) and self._gl_state.initialized:
+        if has_qt_cpp_binding(self) and self._gl_state.initialized:
             logger.debug("Destructor invoked, running cleanup")
             self.cleanup()

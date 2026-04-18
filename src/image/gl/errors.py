@@ -22,6 +22,7 @@ __all__ = [
     "GLShaderError",
     "GLFramebufferError",
     "GLMemoryError",
+    "GLSyncTimeout",
     "gl_error_check",
     "GL_ERROR_CODES",
 ]
@@ -49,17 +50,17 @@ def _build_error_code_map() -> dict[int, str]:
     """
     # Mandatory error codes: present in every GL profile >= 2.0.
     codes: dict[int, str] = {
-        GL.GL_INVALID_ENUM:                 "GL_INVALID_ENUM",
-        GL.GL_INVALID_VALUE:                "GL_INVALID_VALUE",
-        GL.GL_INVALID_OPERATION:            "GL_INVALID_OPERATION",
-        GL.GL_OUT_OF_MEMORY:                "GL_OUT_OF_MEMORY",
-        GL.GL_INVALID_FRAMEBUFFER_OPERATION:"GL_INVALID_FRAMEBUFFER_OPERATION",
+        GL.GL_INVALID_ENUM: "GL_INVALID_ENUM",
+        GL.GL_INVALID_VALUE: "GL_INVALID_VALUE",
+        GL.GL_INVALID_OPERATION: "GL_INVALID_OPERATION",
+        GL.GL_OUT_OF_MEMORY: "GL_OUT_OF_MEMORY",
+        GL.GL_INVALID_FRAMEBUFFER_OPERATION: "GL_INVALID_FRAMEBUFFER_OPERATION",
     }
 
     # Legacy fixed-function codes: absent in Core profile (GL 3.1+).
     # Include them only when the driver exports the enum token.
     _optional: list[tuple[str, str]] = [
-        ("GL_STACK_OVERFLOW",  "GL_STACK_OVERFLOW"),
+        ("GL_STACK_OVERFLOW", "GL_STACK_OVERFLOW"),
         ("GL_STACK_UNDERFLOW", "GL_STACK_UNDERFLOW"),
     ]
     for attr, name in _optional:
@@ -132,14 +133,25 @@ class GLMemoryError(GLError):
     """
 
 
-# ---------------------------------------------------------------------------
-# Context manager
-# ---------------------------------------------------------------------------
+class GLSyncTimeout(Exception):
+    """
+    Raised when a ``glClientWaitSync`` call exceeds the configured timeout.
+
+    This exception indicates that the GPU did not signal the fence sync object
+    within the allowed wait period (``_SYNC_TIMEOUT_NS``).  It does **not**
+    mean the transfer failed — the DMA may still complete after this point —
+    but the CPU can no longer safely read the PBO without risking a data race.
+
+    To reduce the likelihood of spurious timeouts, increase
+    ``_SYNC_TIMEOUT_NS`` or ensure the upstream render pass completes before
+    the fence is waited on.
+    """
+
 
 @contextmanager
 def gl_error_check(
-    operation: str,
-    exception_class: type[GLError] = GLError,
+        operation: str,
+        exception_class: type[GLError] = GLError,
 ) -> Iterator[None]:
     """
     Context manager that drains the GL error queue after a block of GL calls.
@@ -196,13 +208,7 @@ def gl_error_check(
     try:
         yield
     finally:
-        # ------------------------------------------------------------------ #
-        # Drain the full error queue.                                         #
-        # GL accumulates errors in a FIFO of implementation-defined depth     #
-        # (at least 1, typically 256).  We must loop until GL_NO_ERROR to     #
-        # clear all pending codes and prevent them bleeding into the next     #
-        # operation.                                                           #
-        # ------------------------------------------------------------------ #
+        # Drain the full error queue.
         errors: list[str] = []
 
         while (error_code := GL.glGetError()) != GL.GL_NO_ERROR:

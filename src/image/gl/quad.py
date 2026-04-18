@@ -19,7 +19,6 @@ and attribute pointers so that subsequent frames only need
 
 Usage
 -----
-::
 
     geo = GeometryManager()
     if not geo.initialize():
