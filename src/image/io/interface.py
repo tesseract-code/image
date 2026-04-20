@@ -74,18 +74,3 @@ class ImageLoaderAdapter(ABC):
         hasher = hashlib.new(alg)
         hasher.update(data.tobytes())
         return hasher.hexdigest()
-
-
-# ==========================================
-# Enhanced Pillow Implementation
-# ==========================================
-
-
-# ==========================================
-# Enhanced OpenCV Implementation
-# ==========================================
-
-
-# ==========================================
-# Factory & API
-# ==========================================
