@@ -1509,7 +1509,7 @@ class GLFrameViewer(QOpenGLWidget):
         if not self._current_stats:
             return {"fps": GLfloat(0.0), "avg_ms": GLfloat(0.0)}
         return {
-            "fps": GLfloat(self._current_stats.fps),
+            "fps": GLfloat(self._current_stats.rate),
             "avg_ms": GLfloat(self._current_stats.avg_processing_ms),
         }
 

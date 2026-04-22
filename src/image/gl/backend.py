@@ -176,7 +176,7 @@ def initialize_context() -> None:
         logger.info(
             "GL Debug Mode: ENABLED (PyOpenGL checking: %s)", OpenGL.ERROR_CHECKING
         )
-        from cross_platform.qt6_utils.image.gl.debug import enable_gl_debug_output
+        from image.gl.debug import enable_gl_debug_output
         enable_gl_debug_output()
     else:
         logger.info("GL Debug Mode: DISABLED (High Performance)")
