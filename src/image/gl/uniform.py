@@ -220,7 +220,6 @@ class UniformManager:
         names: list[str] = [
             cast(str, member.value) for member in enum_cls.__members__.values()
         ]
-        print(names)
         self.register_uniforms(names, introspect=introspect)
 
     def register_uniforms(

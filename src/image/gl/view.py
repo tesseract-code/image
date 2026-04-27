@@ -257,48 +257,24 @@ class GLFrameViewer(QOpenGLWidget):
         """
         try:
             initialize_context()
-            cleared = clear_gl_errors("Initializing OpenGL context")
-            if cleared:
-                logger.error("Cleared OpenGL context: ",
-                             cleareed_gl_errors=cleared)
 
             GL.glClearColor(GLfloat(0.1), GLfloat(0.1), GLfloat(0.1),
                             GLfloat(1.0))
-
-            cleared = clear_gl_errors("Initializing OpenGL context")
-            if cleared:
-                logger.error("Cleared OpenGL context: ",
-                             cleareed_gl_errors=cleared)
 
             GL.glEnable(GLenum(GL.GL_BLEND))
             GL.glBlendFunc(GLenum(GL.GL_SRC_ALPHA),
                            GLenum(GL.GL_ONE_MINUS_SRC_ALPHA))
             GL.glEnable(GLenum(GL.GL_FRAMEBUFFER_SRGB))
 
-            cleared = clear_gl_errors("Initializing OpenGL context")
-            if cleared:
-                logger.error("Cleared OpenGL context: ",
-                             cleareed_gl_errors=cleared)
-
             self._pbo_upload_mngr.initialize()
             self._pbo_download_bridge = QtPBOBridge(self)
             self._pbo_download_bridge.initialize()
-
-            cleared = clear_gl_errors("Initializing OpenGL context")
-            if cleared:
-                logger.error("Cleared OpenGL context: ",
-                             cleareed_gl_errors=cleared)
 
             validate_shader_paths(shaders=IMAGE_SHADERS)
             self._program_manager.initialize(
                 vertex_path=IMAGE_SHADERS["image_vertex"],
                 fragment_path=IMAGE_SHADERS["image_fragment"],
             )
-
-            cleared = clear_gl_errors("Initializing OpenGL context")
-            if cleared:
-                logger.error("Cleared OpenGL context: ",
-                             cleareed_gl_errors=cleared)
 
             if not self._program_manager.is_valid:
                 raise GLInitializationError("Failed to create shader program")
