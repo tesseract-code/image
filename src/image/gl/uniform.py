@@ -420,72 +420,64 @@ class UniformManager:
         Raises:
             GLError: If the driver reports an error after the upload.
         """
+        with gl_error_check(f"Setting uniform type {gl_type} {location} {value}"):
+            if gl_type in (
+                    GL.GL_INT,
+                    GL.GL_BOOL,
+                    GL.GL_SAMPLER_1D,
+                    GL.GL_SAMPLER_2D,
+                    GL.GL_SAMPLER_3D,
+                    # all sampler types bind as a texture-unit int
+                    GL.GL_SAMPLER_CUBE,
+            ):
+                GL.glUniform1i(location, int(value))
 
-        if gl_type in (
-                GL.GL_INT,
-                GL.GL_BOOL,
-                GL.GL_SAMPLER_1D,
-                GL.GL_SAMPLER_2D,
-                GL.GL_SAMPLER_3D,
-                # all sampler types bind as a texture-unit int
-                GL.GL_SAMPLER_CUBE,
-        ):
-            GL.glUniform1i(location, int(value))
+            elif gl_type == GL.GL_FLOAT:
+                GL.glUniform1f(location, float(value))
 
-        elif gl_type == GL.GL_FLOAT:
-            GL.glUniform1f(location, float(value))
+            elif gl_type == GL.GL_UNSIGNED_INT:
+                GL.glUniform1ui(location, int(value))
+            elif gl_type == GL.GL_FLOAT_VEC2:
+                GL.glUniform2fv(location, 1, np.asarray(value, np.float32))
+            elif gl_type == GL.GL_FLOAT_VEC3:
+                GL.glUniform3fv(location, 1, np.asarray(value, np.float32))
+            elif gl_type == GL.GL_FLOAT_VEC4:
+                GL.glUniform4fv(location, 1, np.asarray(value, np.float32))
+            elif gl_type == GL.GL_INT_VEC2:
+                GL.glUniform2iv(location, 1, np.asarray(value, np.int32))
+            elif gl_type == GL.GL_INT_VEC3:
+                GL.glUniform3iv(location, 1, np.asarray(value, np.int32))
+            elif gl_type == GL.GL_INT_VEC4:
+                GL.glUniform4iv(location, 1, np.asarray(value, np.int32))
+            elif gl_type == GL.GL_BOOL_VEC2:
+                GL.glUniform2iv(location, 1, np.asarray(value, np.int32))
+            elif gl_type == GL.GL_BOOL_VEC3:
+                GL.glUniform3iv(location, 1, np.asarray(value, np.int32))
+            elif gl_type == GL.GL_BOOL_VEC4:
+                GL.glUniform4iv(location, 1, np.asarray(value, np.int32))
+            elif gl_type == GL.GL_FLOAT_MAT2:
+                mat = ensure_contiguity(np.asarray(value, np.float32))
+                GL.glUniformMatrix2fv(location, 1, GL.GL_FALSE, mat)
+            elif gl_type == GL.GL_FLOAT_MAT3:
+                mat = ensure_contiguity(np.asarray(value, np.float32))
+                GL.glUniformMatrix3fv(location, 1, GL.GL_FALSE, mat)
+            elif gl_type == GL.GL_FLOAT_MAT4:
+                mat = ensure_contiguity(np.asarray(value, np.float32))
+                GL.glUniformMatrix4fv(location, 1, GL.GL_FALSE, mat)
+            elif gl_type == GL.GL_FLOAT_MAT2x3:
+                mat = ensure_contiguity(np.asarray(value, np.float32))
+                GL.glUniformMatrix2x3fv(location, 1, GL.GL_FALSE, mat)
+            elif gl_type == GL.GL_FLOAT_MAT3x2:
+                mat = ensure_contiguity(np.asarray(value, np.float32))
+                GL.glUniformMatrix3x2fv(location, 1, GL.GL_FALSE, mat)
 
-        elif gl_type == GL.GL_UNSIGNED_INT:
-            GL.glUniform1ui(location, int(value))
-        elif gl_type == GL.GL_FLOAT_VEC2:
-            GL.glUniform2fv(location, 1, np.asarray(value, np.float32))
-        elif gl_type == GL.GL_FLOAT_VEC3:
-            GL.glUniform3fv(location, 1, np.asarray(value, np.float32))
-        elif gl_type == GL.GL_FLOAT_VEC4:
-            GL.glUniform4fv(location, 1, np.asarray(value, np.float32))
-        elif gl_type == GL.GL_INT_VEC2:
-            GL.glUniform2iv(location, 1, np.asarray(value, np.int32))
-        elif gl_type == GL.GL_INT_VEC3:
-            GL.glUniform3iv(location, 1, np.asarray(value, np.int32))
-        elif gl_type == GL.GL_INT_VEC4:
-            GL.glUniform4iv(location, 1, np.asarray(value, np.int32))
-        elif gl_type == GL.GL_BOOL_VEC2:
-            GL.glUniform2iv(location, 1, np.asarray(value, np.int32))
-        elif gl_type == GL.GL_BOOL_VEC3:
-            GL.glUniform3iv(location, 1, np.asarray(value, np.int32))
-        elif gl_type == GL.GL_BOOL_VEC4:
-            GL.glUniform4iv(location, 1, np.asarray(value, np.int32))
-        elif gl_type == GL.GL_FLOAT_MAT2:
-            mat = ensure_contiguity(np.asarray(value, np.float32))
-            GL.glUniformMatrix2fv(location, 1, GL.GL_FALSE, mat)
-        elif gl_type == GL.GL_FLOAT_MAT3:
-            mat = ensure_contiguity(np.asarray(value, np.float32))
-            GL.glUniformMatrix3fv(location, 1, GL.GL_FALSE, mat)
-        elif gl_type == GL.GL_FLOAT_MAT4:
-            mat = ensure_contiguity(np.asarray(value, np.float32))
-            GL.glUniformMatrix4fv(location, 1, GL.GL_FALSE, mat)
-        elif gl_type == GL.GL_FLOAT_MAT2x3:
-            mat = ensure_contiguity(np.asarray(value, np.float32))
-            GL.glUniformMatrix2x3fv(location, 1, GL.GL_FALSE, mat)
-        elif gl_type == GL.GL_FLOAT_MAT3x2:
-            mat = ensure_contiguity(np.asarray(value, np.float32))
-            GL.glUniformMatrix3x2fv(location, 1, GL.GL_FALSE, mat)
+            else:
+                self._logger.warning(
+                    "Unsupported uniform type in dispatch: 0x%x", gl_type
+                )
+                return False
 
-        else:
-            self._logger.warning(
-                "Unsupported uniform type in dispatch: 0x%x", gl_type
-            )
-            return False
-
-        # Drain one error from the queue.  A non-zero code means the upload
-        # was rejected by the driver; raise so the caller can log and decide
-        # how to handle it.
-        error = GL.glGetError()
-        if error != GL.GL_NO_ERROR:
-            raise GLError(
-                "glUniform* error 0x%x at location %d" % (error, location))
-
-        return True
+            return True
 
     def _introspect_uniforms(self) -> dict[str, dict[str, Any]]:
         """
