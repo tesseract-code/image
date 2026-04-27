@@ -5,13 +5,13 @@ from PyQt6.QtCore import Qt, pyqtSlot, pyqtSignal
 from PyQt6.QtWidgets import (QScrollArea, QWidget, QVBoxLayout, QFrame, QLabel,
                              QSlider, QDoubleSpinBox, QPushButton, QComboBox)
 
-from cross_platform.qt6_utils.qtgui.src.qtgui.switch import Switch
-from cross_platform.svg_icons.svg_path import get_icon, IconType
-from image.gui.navigation import NavigablePanel, create_group_frame, \
-    create_parameter_row
+from cross_platform.dev.icons_legacy.svg_path import get_icon, IconType
+from image.gui.navigation import (NavigablePanel, create_group_frame,
+                                  create_parameter_row)
 from image.model.cmap import LUTType
 from image.pipeline.stats import FrameStats
 from image.settings.roi import ROI
+from qtgui.switch import Switch
 
 
 class ControlPanel(NavigablePanel):
@@ -55,9 +55,9 @@ class ControlPanel(NavigablePanel):
                       self._create_colormap_page())
         self.add_page(IconType.LINE_ZOOM_IN, "Transform",
                       self._create_transform_page())
-        self.add_page(IconType.LINE_IMAGE_EDIT, "Overlays",
+        self.add_page(IconType.LINE_CHECKBOX_MULTIPLE_BLANK, "Overlays",
                       self._create_overlays_page())
-        self.add_page(IconType.LINE_IMAGE, "Display",
+        self.add_page(IconType.LINE_RULER_2, "Display",
                       self._create_display_page())
 
     def _create_scrollable_page(self) -> tuple[QScrollArea, QVBoxLayout]:
@@ -71,10 +71,6 @@ class ControlPanel(NavigablePanel):
 
         scroll.setWidget(content)
         return scroll, layout
-
-    # ========================================================================
-    # Page 1: Info
-    # ========================================================================
 
     def _create_info_page(self) -> QWidget:
         """
@@ -102,7 +98,6 @@ class ControlPanel(NavigablePanel):
 
         for i, (key, label) in enumerate(property_specs):
             value_label = QLabel("—")
-            value_label.setMinimumWidth(45)
             value_label.setAlignment(
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
             )
@@ -135,10 +130,6 @@ class ControlPanel(NavigablePanel):
         layout.addStretch()
 
         return scroll
-
-    # ========================================================================
-    # Page 2: Adjustments
-    # ========================================================================
 
     def _create_adjustments_page(self) -> QWidget:
         """
@@ -214,10 +205,6 @@ class ControlPanel(NavigablePanel):
         layout.addStretch()
 
         return scroll
-
-    # ========================================================================
-    # Page 3: Colormap
-    # ========================================================================
 
     def _create_colormap_page(self) -> QWidget:
         """
@@ -304,10 +291,6 @@ class ControlPanel(NavigablePanel):
 
         return scroll
 
-    # ========================================================================
-    # Page 4: Transform
-    # ========================================================================
-
     def _create_transform_page(self) -> QWidget:
         """
         Transform page: View transformation controls.
@@ -342,10 +325,6 @@ class ControlPanel(NavigablePanel):
 
         return scroll
 
-    # ========================================================================
-    # Page 5: Overlays
-    # ========================================================================
-
     def _create_overlays_page(self) -> QWidget:
         """
         Overlays page: Crosshairs, ROI, and overlay controls.
@@ -371,7 +350,8 @@ class ControlPanel(NavigablePanel):
         self.center_crosshair_switch = Switch(parent=crosshair_frame)
         crosshair_layout.addWidget(
             create_parameter_row("Center Crosshair",
-                                 self.center_crosshair_switch)
+                                 self.center_crosshair_switch,
+                                 show_border=False)
         )
 
         layout.addWidget(crosshair_frame)
@@ -403,10 +383,6 @@ class ControlPanel(NavigablePanel):
 
         return scroll
 
-    # ========================================================================
-    # Page 6: Display
-    # ========================================================================
-
     def _create_display_page(self) -> QWidget:
         """
         Display page: Visual elements and rendering options.
@@ -430,7 +406,8 @@ class ControlPanel(NavigablePanel):
 
         self.axes_enabled_switch = Switch(parent=elements_frame)
         elements_layout.addWidget(
-            create_parameter_row("Show Axes", self.axes_enabled_switch)
+            create_parameter_row("Show Axes", self.axes_enabled_switch,
+                                 show_border=False)
         )
 
         layout.addWidget(elements_frame)
@@ -446,7 +423,7 @@ class ControlPanel(NavigablePanel):
         self.interpolation_switch.setChecked(True)
         rendering_layout.addWidget(
             create_parameter_row("Smooth Interpolation",
-                                 self.interpolation_switch)
+                                 self.interpolation_switch, show_border=False)
         )
 
         layout.addWidget(rendering_frame)
@@ -558,10 +535,6 @@ class ControlPanel(NavigablePanel):
         if not self.updating_ui:
             self.colorbar_visibility_changed.emit(checked)
 
-    # ========================================================================
-    # LUT Handlers
-    # ========================================================================
-
     def _on_lut_enabled_changed(self, checked: bool):
         if not self.updating_ui:
             self.settings.update_setting('lut_enabled', checked)
@@ -591,10 +564,6 @@ class ControlPanel(NavigablePanel):
                 self.lut_max_spin.setValue(value)
             self.settings.update_setting('lut_max', value)
 
-    # ========================================================================
-    # Transform Handlers
-    # ========================================================================
-
     def _on_zoom_changed(self, value: float):
         if not self.updating_ui:
             self.settings.update_setting('zoom', value)
@@ -605,10 +574,6 @@ class ControlPanel(NavigablePanel):
         self.settings.update_setting('pan_x', 0.0)
         self.settings.update_setting('pan_y', 0.0)
         self.settings.update_setting('rotation', 0.0)
-
-    # ========================================================================
-    # Overlay Handlers
-    # ========================================================================
 
     def _on_tracking_crosshair_changed(self, checked: bool):
         if not self.updating_ui:
@@ -629,10 +594,6 @@ class ControlPanel(NavigablePanel):
             roi = ROI(x=0, y=0, width=size, height=size)
             self.roi_changed.emit(roi)
 
-    # ========================================================================
-    # Display Handlers
-    # ========================================================================
-
     def _on_histogram_enabled_changed(self, checked: bool):
         if not self.updating_ui:
             self.settings.update_setting('histogram_enabled', checked)
@@ -645,10 +606,6 @@ class ControlPanel(NavigablePanel):
         if not self.updating_ui:
             self.settings.update_setting('interpolation', checked)
 
-    # ========================================================================
-    # Settings Feedback
-    # ========================================================================
-
     def _on_settings_changed(self):
         """Update UI when settings change externally."""
         self.updating_ui = True
@@ -659,10 +616,6 @@ class ControlPanel(NavigablePanel):
             pass
         finally:
             self.updating_ui = False
-
-    # ========================================================================
-    # Info Updates
-    # ========================================================================
 
     @pyqtSlot(FrameStats)
     def _update_image_info_helper(self, metadata: FrameStats):

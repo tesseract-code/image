@@ -8,8 +8,6 @@ import numpy as np
 import pytest
 from PyQt6.QtCore import QThread
 
-import qt6_utils.image.utils.data
-
 
 # -----------------------------------------------------------------------------
 # 1. MOCKS (To simulate dependencies without full library)
@@ -80,27 +78,37 @@ mock_cp_core.shm_ring.cleanup_shm_cache = lambda x, unlink: None
 mock_cp_core.cpu_utils.set_high_priority = lambda x: None
 
 mock_qt_utils = MagicMock()
-mock_qt_utils.image.pipeline.metadata.FrameStats = ImageMetadata
+mock_qt_utils.image.pipeline._frame_stats.FrameStats = ImageMetadata
 mock_qt_utils.image.pipeline.config.ProcessingConfig = ProcessingConfig
-qt6_utils.image.utils.data.ensure_contiguity = lambda x: np.ascontiguousarray(x)
-mock_qt_utils.image.pipeline.backend.process._process_image_pipeline = lambda x, y, z: ImageMetadata(shape=x.shape)
-mock_qt_utils.image.settings.lut.ColormapModel = MagicMock
+mock_qt_utils.image.utils.data.ensure_contiguity = lambda x: np.ascontiguousarray(x)
+mock_qt_utils.image.pipeline.backend.process._process_image_pipeline = (
+    lambda x, y, z: ImageMetadata(shape=x.shape))
+mock_qt_utils.image._settings.lut.ColormapModel = MagicMock
 mock_qt_utils.utils.has_qt_cpp_binding = lambda x: False
 mock_qt_utils.core.reference.has_qt_cpp_binding = lambda x: False
 mock_qt_utils.image.pipeline.monitor.PerformanceMonitor = MagicMock
 mock_qt_utils.image.pipeline.monitor.PerfStats = MagicMock
 
+
 def apply_patches():
     sys.modules['cross_platform.core.shm_ring'] = mock_cp_core.shm_ring
     sys.modules['cross_platform.core.cpu_utils'] = mock_cp_core.cpu_utils
-    sys.modules['cross_platform.qt6_utils.image.pipeline.backend.utils'] = mock_qt_utils.image.pipeline.backend.utils
-    sys.modules['cross_platform.qt6_utils.image.pipeline.backend.process'] = mock_qt_utils.image.pipeline.backend.process
-    sys.modules['cross_platform.qt6_utils.image.pipeline.metadata'] = mock_qt_utils.image.pipeline.metadata
-    sys.modules['cross_platform.qt6_utils.image.pipeline.config'] = mock_qt_utils.image.pipeline.config
-    sys.modules['cross_platform.qt6_utils.image.settings.lut'] = mock_qt_utils.image.settings.lut
-    sys.modules['cross_platform.qt6_utils.utils'] = mock_qt_utils.utils
-    sys.modules['cross_platform.qt6_utils.core.reference'] = mock_qt_utils.core.reference
-    sys.modules['cross_platform.qt6_utils.image.pipeline.monitor'] = mock_qt_utils.image.pipeline.monitor
+    sys.modules[
+        'image.pipeline.backend.utils'] = mock_qt_utils.image.pipeline.backend.utils
+    sys.modules[
+        'image.pipeline.backend.process'] = mock_qt_utils.image.pipeline.backend.process
+    sys.modules[
+        'image.pipeline.metadata'] = mock_qt_utils.image.pipeline._frame_stats
+    sys.modules[
+        'image.pipeline.config'] = mock_qt_utils.image.pipeline.config
+    sys.modules[
+        'image.settings.lut'] = mock_qt_utils.image._settings.lut
+    sys.modules['utils'] = mock_qt_utils.utils
+    sys.modules[
+        'core.reference'] = mock_qt_utils.core.reference
+    sys.modules[
+        'image.pipeline.monitor'] = mock_qt_utils.image.pipeline.monitor
+
 
 apply_patches()
 # -----------------------------------------------------------------------------
@@ -108,10 +116,10 @@ apply_patches()
 # -----------------------------------------------------------------------------
 # Assuming your files are named submitter.py, worker.py, receiver.py
 # Adjust if they are in a package structure
-from cross_platform.qt6_utils.image.pipeline.submit import FrameSubmitter
-from cross_platform.qt6_utils.image.pipeline.frame import FrameHeader
-from cross_platform.qt6_utils.image.pipeline.worker import image_worker_entry
-from cross_platform.qt6_utils.image.pipeline.receive import FrameReceiver
+from image.pipeline.submit import FrameSubmitter
+from image.pipeline.frame import FrameHeader
+from image.pipeline.worker import image_worker_entry
+from image.pipeline.receive import FrameReceiver
 
 
 # -----------------------------------------------------------------------------
@@ -122,9 +130,11 @@ def worker_wrapper(input_q, output_q, buf_count, stop_evt, prio, proc_func):
     apply_patches()
     image_worker_entry(input_q, output_q, buf_count, stop_evt, prio, proc_func)
 
+
 def add_ten_processor(img, out_buf, config):
     np.add(img, 10, out=out_buf, casting='unsafe')
     return ImageMetadata(timestamp=0, shape=img.shape, dtype_str=str(img.dtype))
+
 
 def passthrough_processor(img, out, cfg):
     np.copyto(out, img, casting='unsafe')
@@ -206,7 +216,7 @@ def test_worker_processing_flow(queues, stop_event):
         input_q.put((in_shm.name, (50, 50), np.uint8, {}))
 
         p = multiprocessing.Process(target=worker_wrapper, args=(
-        input_q, output_q, 2, stop_event, False, add_ten_processor))
+            input_q, output_q, 2, stop_event, False, add_ten_processor))
         p.start()
         try:
             out_name, _ = output_q.get(timeout=4.0)
@@ -233,6 +243,7 @@ def test_worker_processing_flow(queues, stop_event):
     finally:
         in_shm.close()
         in_shm.unlink()
+
 
 #
 def test_receiver_integration(qtbot, stop_event):
@@ -275,7 +286,7 @@ def test_full_pipeline_sanity(qtbot, queues, stop_event):
     input_q, output_q = queues
     submitter = FrameSubmitter(input_q, 2)
     p = multiprocessing.Process(target=worker_wrapper, args=(
-    input_q, output_q, 2, stop_event, False, passthrough_processor))
+        input_q, output_q, 2, stop_event, False, passthrough_processor))
     p.start()
     receiver = FrameReceiver(output_q, stop_event)
     thread = QThread()
@@ -332,7 +343,8 @@ def test_data_integrity_passthrough():
         # 4. Run Worker in Process
         p = multiprocessing.Process(
             target=image_worker_entry,
-            args=(input_q, output_q, 2, stop_event, False, passthrough_processor)
+            args=(input_q, output_q, 2, stop_event, False,
+                  passthrough_processor)
         )
         p.start()
 

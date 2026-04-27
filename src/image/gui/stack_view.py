@@ -8,7 +8,7 @@ from PyQt6.QtCore import pyqtSignal, pyqtSlot, Qt, QTimer, QRectF, QSize
 from PyQt6.QtGui import QSurfaceFormat
 from PyQt6.QtWidgets import QGraphicsScene, QFrame
 
-from cross_platform.dev.utils.create_image import create_rgb_checkered
+from image.demo.utils.create_image import create_rgb_checkered
 from image.gl.utils import get_surface_format
 from image.gl.view import (GLFrameViewer)
 from image.gui.overlay.view import (
@@ -58,6 +58,9 @@ class OverlayStack(QFrame):
         self._scene_pos = None
         self._pending_resize = False
 
+        self._image_width: int = 0
+        self._image_height: int = 0
+
         self._setup_ui()
 
     def _setup_transparent_overlay(self):
@@ -94,6 +97,8 @@ class OverlayStack(QFrame):
             QtWidgets.QGraphicsView.OptimizationFlag.DontAdjustForAntialiasing,
             True)
 
+
+
     def _setup_managers(self):
         """Initialize all manager objects."""
         # Tooltip manager
@@ -104,9 +109,11 @@ class OverlayStack(QFrame):
         self.crosshair_manager.fix_scene_reference(self.overlay.scene())
 
         # ROI manager
+        # GL textures are stored bottom-up, so the data must be vertically
+        # flipped before the ROI manager crops into image coordinates.
         self.roi_manager = ROIManager(
             self.overlay,
-            lambda: np.flip(self._get_img_data(), 0),
+            lambda: np.flip(self._get_img_data(), axis=0),
             self._get_img_dims
         )
         # Forward ROI signals
@@ -122,7 +129,9 @@ class OverlayStack(QFrame):
         )
         self.sync_manager.transformSynced.connect(self.transform_changed)
 
-        # Setup GL viewer connections
+        # FIX 2: Connect the GL viewer's image-updated signal so that
+        # _image_width/_image_height stay current and image_changed is emitted.
+        self.gl_viewer.frameChanged.connect(self._on_gl_image_updated)
         self.gl_viewer.glError.connect(self._on_gl_error)
 
         # Install event filter
@@ -154,7 +163,9 @@ class OverlayStack(QFrame):
 
     def _get_img_dims(self) -> Optional[Tuple[int, int]]:
         if self.gl_viewer.has_data:
-            width, height = self.gl_viewer.data.shape[:2]
+            # FIX 3 (also applied here): shape is (rows, cols, ...) i.e.
+            # (height, width, ...). Return (width, height) explicitly.
+            height, width = self.gl_viewer.data.shape[:2]
             return width, height
 
     def _initialize_overlays(self):
@@ -182,8 +193,7 @@ class OverlayStack(QFrame):
 
     @pyqtSlot()
     def _sync_view(self):
-        self.sync_manager.with_sync_disabled(
-            lambda: self._reset_view_on_load())
+        self.sync_manager.with_sync_disabled(self._reset_view_on_load)
         self.crosshair_manager.update_dimensions(self._image_width,
                                                  self._image_height)
 
@@ -200,18 +210,30 @@ class OverlayStack(QFrame):
         self.image_changed.emit(metadata)
 
     def _reset_view_on_load(self):
-        """Reset view when new image loads."""
+        """Reset view when new image loads.
+
+        Note: the overlay scene rect is in viewport coordinates, so we center
+        on the viewport midpoint rather than the raw image dimensions, keeping
+        the two coordinate systems consistent.
+        """
+        # FIX 6: Use viewport centre instead of image dimensions. Centering on
+        # image pixel coords was incorrect because the scene rect is always set
+        # to viewport dimensions (see _update_scene_rect_to_viewport).
         self.settings.update_setting('zoom', 1.0)
         self.settings.update_setting('pan_x', 0.0)
         self.settings.update_setting('pan_y', 0.0)
         self.overlay.resetTransform()
-        self.overlay.centerOn(self._image_width / 2,
-                              self._image_height / 2)
+        viewport_rect = self.overlay.viewport().rect()
+        self.overlay.centerOn(
+            viewport_rect.width() / 2,
+            viewport_rect.height() / 2,
+        )
 
-    @pyqtSlot()
-    def _on_gl_error(self, error_msg):
+    @pyqtSlot(str)
+    def _on_gl_error(self, error_msg: str):
         """Handle GL errors"""
-        print(f"GL Error: {error_msg}")
+        # FIX 9: Use logger instead of print.
+        logger.error("GL error: %s", error_msg)
 
     def changeEvent(self, event):
         """Handle window state changes"""
@@ -229,21 +251,25 @@ class OverlayStack(QFrame):
         self._update_scene_rect_to_viewport(force=True)
 
     def resizeEvent(self, event):
-        """Handle resize"""
+        """Handle resize, debounced via a single-shot timer."""
         super().resizeEvent(event)
 
-        print("OVERLAY RESIZE event")
+        # FIX 9: Use logger instead of print.
+        logger.debug("OverlayStack resize event: %s", event.size())
 
         self._position_layers()
 
+        # FIX 4: Actually defer the work with a timer. The _pending_resize
+        # guard now correctly suppresses redundant timer registrations while
+        # a deferred call is already queued.
         if self._pending_resize:
             return
 
         self._pending_resize = True
-        self._deferred_resize_handling()
+        QTimer.singleShot(0, self._deferred_resize_handling)
 
     def _deferred_resize_handling(self):
-        """Handle resize after delay"""
+        """Handle resize after the event loop has settled."""
         self._pending_resize = False
         self._update_scene_rect_to_viewport(force=True)
 
@@ -272,22 +298,27 @@ class OverlayStack(QFrame):
                     self._global_pos = global_pos
                     self._scene_pos = scene_pos
                     self.mouse_pos_changed.emit(int(scene_pos.x()),
-                                                    int(scene_pos.y()))
+                                                int(scene_pos.y()))
                 return False
 
         return super().eventFilter(obj, event)
 
-    def update_tooltip(self,  x:int, y:int, value):
+    def update_tooltip(self, x: int, y: int, value):
         if x == int(self._scene_pos.x()) and y == int(self._scene_pos.y()):
             self.tooltip_manager.update_tooltip(x, y, value, self._global_pos)
 
     # ========== Public API ==========
 
     def update_image(self, numpy_array: np.ndarray):
-        """Update the displayed image"""
+        """Update the displayed image.
+
+        Args:
+            numpy_array: Image array with shape (height, width[, channels]).
+        """
         self.gl_viewer.present(numpy_array)
-        self._image_width = numpy_array.shape[0]
-        self._image_height = numpy_array.shape[1]
+        # FIX 3: shape is (rows, cols, ...) == (height, width, ...).
+        self._image_height = numpy_array.shape[0]
+        self._image_width = numpy_array.shape[1]
 
     def set_sync_enabled(self, enabled: bool):
         """Enable/disable transform synchronization"""
@@ -371,11 +402,10 @@ class OverlayStack(QFrame):
     def fit_to_scene(self):
         """Fit view to show entire image"""
         if self.gl_viewer.has_data:
-            width, height = self.gl_viewer.data.shape[:2]
+            # FIX 3: shape[0] is height, shape[1] is width.
+            height, width = self.gl_viewer.data.shape[:2]
             self.overlay.resetTransform()
-
-            self.overlay.centerOn(width / 2,
-                                  height / 2)
+            self.overlay.centerOn(width / 2, height / 2)
             self.sync_manager.sync_overlay_to_gl()
 
     def reset_view(self):
@@ -396,11 +426,15 @@ class OverlayStack(QFrame):
         self.gl_viewer.cleanup()
 
     def verify_overlay_setup(self):
-        """Verify overlay setup and return diagnostic info"""
+        """Verify overlay setup and return diagnostic info.
+
+        Delegates internal crosshair state to CrosshairManager.get_diagnostics()
+        rather than reaching into its managed objects directly.
+        """
+        # FIX 11: Crosshair internals are now queried via the manager's own
+        # diagnostic API, preserving encapsulation.
         info = {
             'scene_exists': self.overlay.scene() is not None,
-            'crosshair_overlay_exists': hasattr(self.overlay,
-                                                'crosshair_overlay'),
             'scene_items_count': 0,
             'image_dimensions': (self._image_width, self._image_height),
             'overlay_geometry': (self.overlay.x(), self.overlay.y(),
@@ -423,21 +457,7 @@ class OverlayStack(QFrame):
                                   scene.sceneRect().width(),
                                   scene.sceneRect().height())
 
-            if hasattr(self.overlay, 'crosshair_overlay'):
-                overlay = self.overlay.crosshair_overlay
-                info['crosshair_scene_ref'] = overlay.scene is not None
-
-                if hasattr(overlay, 'h_tracking_line'):
-                    info[
-                        'tracking_in_scene'] = overlay.h_tracking_line.scene() is scene
-                    info[
-                        'tracking_visible'] = overlay.h_tracking_line.isVisible()
-
-                if hasattr(overlay, 'center_crosshair'):
-                    info[
-                        'center_in_scene'] = overlay.center_crosshair.scene() is scene
-                    info[
-                        'center_visible'] = overlay.center_crosshair.isVisible()
+        info.update(self.crosshair_manager.get_diagnostics())
 
         return info
 

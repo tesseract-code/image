@@ -151,7 +151,7 @@ class QtPBOBridge(QObject):
     is needed because the upload manager has no widget lifecycle dependencies.
     """
 
-    imageReady = pyqtSignal(QImage)
+    image_ready = pyqtSignal(QImage)
 
     def __init__(self, widget: QOpenGLWidget) -> None:
         super().__init__(widget)
@@ -234,5 +234,5 @@ class QtPBOBridge(QObject):
             height,
             QImage.Format.Format_RGBA8888,
         ).copy()
-        self.imageReady.emit(qimage)
+        self.image_ready.emit(qimage)
 

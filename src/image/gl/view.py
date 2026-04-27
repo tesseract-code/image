@@ -3,7 +3,7 @@ gl_frame_viewer.py
 ==================
 Hardware-accelerated OpenGL image viewer widget for PyQt6.
 
-Provides real-time shader effects (colour correction, normalisation, colourmap
+Provides real-time shader effects (color correction, normalization, colourmap
 application) via a PBO double-buffering pipeline.  Two upload paths are
 supported:
 
@@ -35,11 +35,12 @@ from image.gl.errors import (
     GLInitializationError,
     GLMemoryError,
     GLTextureError,
-    GLUploadError,
+    GLUploadError, clear_gl_errors,
 )
 from image.gl.format import get_gl_texture_spec
-from image.gl.pbo import PBOBufferingStrategy, PBOUploadManager, \
-    configure_pixel_storage, memmove_pbo, write_pbo_buffer
+from image.gl.pbo import (PBOBufferingStrategy, PBOUploadManager,
+                          configure_pixel_storage, memmove_pbo,
+                          write_pbo_buffer)
 from image.gl.pbo.bridge import QtPBOBridge
 from image.gl.program import ShaderProgramManager
 from image.gl.quad import GeometryManager
@@ -119,7 +120,7 @@ class GLFrameViewer(QOpenGLWidget):
     OpenGL image viewer widget.
 
     Provides hardware-accelerated display with real-time shader effects
-    (colour correction, normalisation, colormap application).  Supports both
+    (color correction, normalization, colormap application).  Supports both
     standard CPU→PBO→Texture uploads and zero-copy pinned-buffer paths.
 
     Upload pipelines
@@ -143,14 +144,14 @@ class GLFrameViewer(QOpenGLWidget):
         return int(handle)
 
     frameChanged = pyqtSignal(object)  # payload.meta (FrameStats or similar)
-    imageReady = pyqtSignal(QImage)
+    image_ready = pyqtSignal(QImage)
     glError = pyqtSignal(str)
 
     def __init__(
             self,
             settings: ImageSettings,
             buffer_strategy: PBOBufferingStrategy = PBOBufferingStrategy.DOUBLE,
-            monitor_performance: bool = True,
+            monitor_performance: bool = False,
             parent: Optional[QWidget] = None,
     ) -> None:
         """
@@ -158,14 +159,11 @@ class GLFrameViewer(QOpenGLWidget):
 
         Args:
             settings:           Image display settings and shader parameters.
-            num_pbos:           Number of Pixel Buffer Objects for async
+            buffer_strategy:    Number of Pixel Buffer Objects for async
                                 uploads (minimum 2 for double-buffering).
             monitor_performance: When ``True``, collect FPS and frame-timing
                                 statistics via :class:`PerformanceMonitor`.
             parent:             Parent Qt widget.
-
-        Raises:
-            ValueError: If ``num_pbos`` is less than 2.
         """
         super().__init__(parent=parent)
 
@@ -257,79 +255,80 @@ class GLFrameViewer(QOpenGLWidget):
                 ``gl_error`` signal is emitted before raising so the UI can
                 react without catching the exception itself.
         """
-        if not self._gl_state.initialized:
-            logger.debug("Initialising OpenGL context")
+        try:
+            initialize_context()
+            cleared = clear_gl_errors("Initializing OpenGL context")
+            if cleared:
+                logger.error("Cleared OpenGL context: ",
+                             cleareed_gl_errors=cleared)
 
-            try:
-                initialize_context()
-                # TODO: find enum issue or keep, clear errors
-                while GL.glGetError() != GL.GL_NO_ERROR:
-                    pass
-                GL.glClearColor(GLfloat(0.1), GLfloat(0.1), GLfloat(0.1),
-                                GLfloat(1.0))
+            GL.glClearColor(GLfloat(0.1), GLfloat(0.1), GLfloat(0.1),
+                            GLfloat(1.0))
 
-                GL.glEnable(GLenum(GL.GL_BLEND))
-                GL.glBlendFunc(GLenum(GL.GL_SRC_ALPHA),
-                               GLenum(GL.GL_ONE_MINUS_SRC_ALPHA))
-                GL.glEnable(GLenum(GL.GL_FRAMEBUFFER_SRGB))
+            GL.glEnable(GLenum(GL.GL_BLEND))
+            GL.glBlendFunc(GLenum(GL.GL_SRC_ALPHA),
+                           GLenum(GL.GL_ONE_MINUS_SRC_ALPHA))
+            GL.glEnable(GLenum(GL.GL_FRAMEBUFFER_SRGB))
 
-                self._pbo_upload_mngr.initialize()
-                self._pbo_download_bridge = QtPBOBridge(self)
-                self._pbo_download_bridge.initialize()
+            self._pbo_upload_mngr.initialize()
+            self._pbo_download_bridge = QtPBOBridge(self)
+            self._pbo_download_bridge.initialize()
 
-                validate_shader_paths(shaders=IMAGE_SHADERS)
-                self._program_manager.initialize(
-                    vertex_path=IMAGE_SHADERS["image_vertex"],
-                    fragment_path=IMAGE_SHADERS["image_fragment"],
-                )
+            validate_shader_paths(shaders=IMAGE_SHADERS)
+            self._program_manager.initialize(
+                vertex_path=IMAGE_SHADERS["image_vertex"],
+                fragment_path=IMAGE_SHADERS["image_fragment"],
+            )
 
-                if not self._program_manager.is_valid:
-                    raise GLInitializationError("Failed to create shader program")
+            if not self._program_manager.is_valid:
+                raise GLInitializationError("Failed to create shader program")
 
-                self._program_manager.uniform_manager.register_members(
-                    VertexShaderUniforms
-                )
-                self._program_manager.uniform_manager.register_members(
-                    FragmentShaderUniforms
-                )
+            self._program_manager.uniform_manager.register_members(
+                VertexShaderUniforms
+            )
+            self._program_manager.uniform_manager.register_members(
+                FragmentShaderUniforms
+            )
 
-                if not self._geo_manager.initialize():
-                    raise GLInitializationError("Failed to initialise geometry")
+            if not self._geo_manager.initialize():
+                raise GLInitializationError("Failed to initialise geometry")
 
-                ctx = self.context()
-                if not ctx or not ctx.isValid():
-                    raise GLInitializationError("OpenGL context is invalid")
+            ctx = self.context()
+            if not ctx or not ctx.isValid():
+                raise GLInitializationError("OpenGL context is invalid")
 
-                self._cmap_texture_id = GLTexture(
-                    self._texture_manager.create_texture("cmap"))
-                self._gl_state.initialized = True
+            self._cmap_texture_id = GLTexture(
+                self._texture_manager.create_texture("cmap"))
+            self._gl_state.initialized = True
 
-                self._sync_settings_to_view()
-                self._view_manager.handle_resize(self.width(), self.height())
-                self.settings.changed.connect(self._on_settings_changed)
-                self._pbo_download_bridge.imageReady.connect(self.imageReady.emit)
+            self._sync_settings_to_view()
 
-                logger.info(
-                    "OpenGL initialisation complete",
-                    program_id=self._program_manager.handle,
-                    cmap_texture_id=self._cmap_texture_id,
-                )
+            self._view_manager.handle_resize(self.width(), self.height())
 
-            except GLInitializationError:
-                # Already the right type — emit signal then re-raise unchanged.
-                raise
-            except GLError as e:
-                # A specific GL subclass from a subsystem (shader, texture, etc.)
-                # — wrap it so callers only need to catch one init-phase type.
-                msg = f"GL initialization failed: {e}"
-                logger.error(msg)
-                self.glError.emit(msg)
-                raise GLInitializationError(msg) from e
-            except Exception as e:
-                msg = f"Unexpected error during GL initialization: {e}"
-                logger.error(msg, exception_type=type(e).__name__)
-                self.glError.emit(msg)
-                raise GLInitializationError(msg) from e
+            self.settings.changed.connect(self._on_settings_changed)
+            self._pbo_download_bridge.image_ready.connect(self.image_ready)
+
+            logger.info(
+                "OpenGL initialisation complete",
+                program_id=self._program_manager.handle,
+                cmap_texture_id=self._cmap_texture_id,
+            )
+
+        except GLInitializationError:
+            # Already the right type — emit signal then re-raise unchanged.
+            raise
+        except GLError as e:
+            # A specific GL subclass from a subsystem (shader, texture, etc.)
+            # — wrap it so callers only need to catch one init-phase type.
+            msg = f"GL initialization failed: {e}"
+            logger.error(msg)
+            self.glError.emit(msg)
+            raise GLInitializationError(msg) from e
+        except Exception as e:
+            msg = f"Unexpected error during GL initialization: {e}"
+            logger.error(msg, exception_type=type(e).__name__)
+            self.glError.emit(msg)
+            raise GLInitializationError(msg) from e
 
     def resizeGL(self, width: GLsizei, height: GLsizei) -> None:
         """
@@ -418,7 +417,7 @@ class GLFrameViewer(QOpenGLWidget):
         """
         Return ``True`` when all resources required for a draw call are ready.
 
-        Checks initialisation, texture, shader program, and VAO availability.
+        Checks initialization, texture, shader program, and VAO availability.
         """
         return (
                 self._gl_state.initialized
@@ -730,7 +729,7 @@ class GLFrameViewer(QOpenGLWidget):
         Must be called with an active GL context.
 
         Args:
-            data: ``(256, 3)`` uint8 array of RGB colour entries.
+            data: ``(256, 3)`` uint8 array of RGB color entries.
 
         Raises:
             GLTextureError: If the colormap texture upload fails.
@@ -780,7 +779,7 @@ class GLFrameViewer(QOpenGLWidget):
             try:
                 self._realloc_image_texture(payload)
 
-                if not payload.is_pinned:
+                if not payload.is_pinned and payload.data is not None:
                     memmove_pbo(payload.pbo_id, payload.data)
                 else:
                     self._pbo_upload_mngr.bind(payload.pbo_id)
@@ -871,7 +870,7 @@ class GLFrameViewer(QOpenGLWidget):
             vmax: Optional[float] = None,
     ) -> None:
         """
-        Write normalisation range uniforms into the active shader batch.
+        Write normalization range uniforms into the active shader batch.
 
         When both ``vmin`` and ``vmax`` are ``None`` the range is
         auto-detected: RGB/RGBA images get ``[0, 1]``; grayscale arrays get
@@ -881,8 +880,8 @@ class GLFrameViewer(QOpenGLWidget):
         Args:
             mngr:  The uniform manager obtained from
                    :meth:`ShaderProgramManager.batch_update_uniforms`.
-            vmin:  Lower normalisation bound, or ``None`` to auto-detect.
-            vmax:  Upper normalisation bound, or ``None`` to auto-detect.
+            vmin:  Lower normalization bound, or ``None`` to auto-detect.
+            vmax:  Upper normalization bound, or ``None`` to auto-detect.
         """
         # Reference — not a copy — to avoid a potentially large array copy
         # on every uniform upload.
@@ -915,7 +914,7 @@ class GLFrameViewer(QOpenGLWidget):
         """
         Flush all shader uniforms from current settings and view state.
 
-        Uses the program manager's batch context to minimise individual
+        Uses the program manager's batch context to minimize individual
         ``glUniform*`` call overhead.
         """
         snapshot = self.settings.get_copy()
@@ -1043,7 +1042,7 @@ class GLFrameViewer(QOpenGLWidget):
             self.update()
 
     def fit_to_viewport(self) -> None:
-        """Scale and centre the image to fill the current viewport."""
+        """Scale and center the image to fill the current viewport."""
         self._view_manager.fit_to_viewport()
         self._sync_view_to_settings()
         self.update()
@@ -1085,7 +1084,7 @@ class GLFrameViewer(QOpenGLWidget):
             success = viewer.present(
                 image=np.random.rand(480, 640, 3).astype(np.float32),
                 metadata=FrameStats(...),
-                pixel_fmt=PixelFormat.RGB_FLOAT32,
+                pixel_fmt=PixelFormat.RGB_FLOAT32
             )
         """
         valid, error_msg = self._can_upload()
@@ -1306,7 +1305,7 @@ class GLFrameViewer(QOpenGLWidget):
 
     def set_range(self, vmin: float, vmax: float) -> None:
         """
-        Set the normalisation range mapped to the low and high ends of the gradient.
+        Set the normalization range mapped to the low and high ends of the gradient.
 
         Delegates to :attr:`settings` so the change propagates through the
         normal settings-changed signal path and marks uniforms dirty automatically.
@@ -1315,7 +1314,8 @@ class GLFrameViewer(QOpenGLWidget):
         self.settings.update_setting("norm_vmax", vmax)
         self.update()
 
-    def get_screentshot(self):
+    @pyqtSlot()
+    def request_capture(self):
         self._pbo_download_bridge.request_capture()
 
     # ------------------------------------------------------------------

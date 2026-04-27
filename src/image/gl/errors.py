@@ -24,6 +24,7 @@ __all__ = [
     "GLMemoryError",
     "GLSyncTimeout",
     "gl_error_check",
+    "clear_gl_errors",
     "GL_ERROR_CODES",
 ]
 
@@ -85,14 +86,15 @@ class GLError(Exception):
 
 
 class GLInitializationError(GLError):
-    """Raised when the OpenGL context or associated resources fail to initialise."""
+    """Raised when the OpenGL context or associated resources fail to
+    initialize."""
 
 
 class GLTextureError(GLError):
     """
     Raised when a texture operation fails (creation, parameter setup, binding).
 
-    ``GLUploadError`` is a specialisation of this class for data-transfer
+    ``GLUploadError`` is a specialization of this class for data-transfer
     failures specifically.
     """
 
@@ -219,3 +221,49 @@ def gl_error_check(
             raise exception_class(
                 f"{n} OpenGL error{'s' if n != 1 else ''} during '{operation}':\n  {detail}"
             )
+
+def clear_gl_errors(label: str = "") -> list[str]:
+    """
+    Drain the GL error queue and discard any pending errors.
+
+    Useful for resetting error state before a guarded block when you know
+    prior GL calls may have left errors in the queue that are irrelevant to
+    the operation you are about to check.  For example:
+
+        clear_gl_errors("pre-upload flush")
+        with gl_error_check("texture upload", GLTextureError):
+            GL.glTexImage2D(...)
+
+    Unlike ``gl_error_check``, this function does **not** raise — it only
+    drains and logs.  Each discarded error is logged at ``WARNING`` level
+    so that stale errors are visible without aborting the caller.
+
+    This function is a no-op when ``GLConfig.CHECK_GL_ERRORS`` is ``False``,
+    matching the behavior of ``gl_error_check`` and avoiding driver
+    round-trips in release builds.
+
+    Args:
+        label: Optional human-readable label used in log messages to identify
+               the call site.  Examples: ``"pre-upload flush"``,
+               ``"context init"``.  Omit for a generic message.
+
+    Returns:
+        A list of error strings that were drained from the queue (e.g.
+        ``["GL_INVALID_ENUM (0x0500)"]``).  Returns an empty list when the
+        queue was already clean or ``CHECK_GL_ERRORS`` is disabled.
+    """
+    gl_cfg = get_gl_config()
+
+    if not gl_cfg.CHECK_GL_ERRORS:
+        return []
+
+    site = f" before '{label}'" if label else ""
+    drained: list[str] = []
+
+    while (error_code := GL.glGetError()) != GL.GL_NO_ERROR:
+        name = GL_ERROR_CODES.get(error_code, "UNKNOWN_GL_ERROR")
+        entry = "%s (0x%04x)" % (name, error_code)
+        logger.warning("Stale GL error discarded%s: %s", site, entry)
+        drained.append(entry)
+
+    return drained

@@ -402,7 +402,7 @@ def viewer(
 
     # Stub Qt signals before initializeGL so that any `.connect()` or
     # `.emit()` call on them does not trigger PyQt6's QObject cast on `v`.
-    v.imageReady = MagicMock()
+    v.image_ready = MagicMock()
     v.glError    = MagicMock()
 
     mock_subsystems["tex"].create_texture.return_value = 99  # cmap texture id

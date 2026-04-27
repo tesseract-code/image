@@ -5,11 +5,11 @@ from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QStackedWidget, QToolButton,
-    QSplitter, QFrame, QCheckBox
+    QSplitter, QFrame
 )
 
 
-from cross_platform.svg_icons.svg_path import get_icon, IconType
+from cross_platform.dev.icons_legacy.svg_path import get_icon, IconType
 from qtcore.meta import QABCMeta
 
 NAV_LIST_STYLESHEET = """
@@ -190,7 +190,7 @@ def create_parameter_row(param_name: str,
 
     row_layout = QHBoxLayout(row_widget)
     # row_layout.setContentsMargins(16, 12, 16, 12)
-    row_layout.setSpacing(0)
+    row_layout.setSpacing(10)
 
     # Create label
     label_text = param_name
@@ -207,7 +207,7 @@ def create_parameter_row(param_name: str,
     row_layout.addWidget(label, alignment=Qt.AlignmentFlag.AlignLeft)
 
     # Add stretch
-    row_layout.addStretch()
+    # row_layout.addStretch()
 
     # Create input widget
 

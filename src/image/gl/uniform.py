@@ -52,6 +52,7 @@ from pycore.log.ctx import ContextAdapter
 
 __all__ = [
     "UniformType",
+    "VertexShaderUniforms",
     "FragmentShaderUniforms",
     "UniformManager",
 ]

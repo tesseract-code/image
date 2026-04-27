@@ -6,12 +6,12 @@ from PyQt6.QtCore import Qt, pyqtSlot, QSize
 from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QHBoxLayout,
                              QFrame,
-                             QComboBox, QScrollArea, QSizePolicy)
+                             QComboBox, QScrollArea, QSizePolicy, QToolBar)
 
 from cross_platform.qt6_utils.qtgui.src.qtgui.drop_down import Dropdown
 from cross_platform.qt6_utils.qtgui.src.qtgui.joystick import JoystickWidget
 from cross_platform.qt6_utils.qtgui.src.qtgui.toolbar import (configure_toolbar_style, StyledToolBar)
-from cross_platform.svg_icons.svg_path import get_icon, IconType
+from cross_platform.dev.icons_legacy.svg_path import get_icon, IconType
 from image.gui.graphics_view import GraphicsImageView
 
 logger = logging.getLogger(__name__)
@@ -40,39 +40,15 @@ class CropView(QFrame):
         """Setup the user interface."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        # layout.setSpacing(8)
-
-
-
-        # Controls
-        controls_layout = QHBoxLayout()
 
         # Info label
         self.info_label = QLabel("No active ROI")
         self.info_label.setWordWrap(False)
-        # self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        # self.info_label.setStyleSheet("padding: 4px;")
-        # controls_layout.addWidget(self.info_label)
-        #
-        # controls_layout.addStretch()
 
         configure_toolbar_style()
         toolbar = StyledToolBar()
 
         toolbar.addWidget(self.info_label)
-        # spacer = QWidget()
-        # spacer.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Expanding,
-        #                                  QSizePolicy.Policy.Preferred))
-        # toolbar.addWidget(spacer)
-        #
-        # # Fit button
-        # self.fit_btn = QToolButton()
-        # self.fit_btn.setToolTip("Fit image to view")
-        # # self.fit_btn.setMaximumWidth(40)
-        # self.fit_btn.setIcon(
-        #     get_icon(IconType.LINE_ASPECT_RATIO, QSize(256, 256)))
-        # self.fit_btn.clicked.connect(self.image_viewer.fit_in_view)
-        # toolbar.addWidget(self.fit_btn)
 
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Expanding,
@@ -82,7 +58,7 @@ class CropView(QFrame):
 
 
         # Magnification control
-        # controls_layout.addWidget(QLabel("Mag:"))
+        toolbar.addWidget(QLabel("Mag:"))
         self.mag_combo = QComboBox()
         self.mag_combo.addItems(["1×", "2×", "4×", "8×"])
         self.mag_combo.setCurrentIndex(0)
@@ -90,28 +66,6 @@ class CropView(QFrame):
         self.mag_combo.currentIndexChanged.connect(
             self._on_magnification_changed)
         toolbar.addWidget(self.mag_combo)
-
-        # controls_layout.addStretch()
-
-        # Auto-update checkbox
-        # self.auto_update_check = QCheckBox("Auto")
-        # self.auto_update_check.setChecked(True)
-        # self.auto_update_check.setToolTip("Automatically update on ROI changes")
-        # self.auto_update_check.toggled.connect(self._on_auto_update_toggled)
-        # controls_layout.addWidget(self.auto_update_check)
-
-        # Refresh button
-        # self.refresh_btn = QPushButton("↻")
-        # self.refresh_btn.setEnabled(False)
-        # self.refresh_btn.setToolTip("Manually refresh view")
-        # self.refresh_btn.setMaximumWidth(40)
-        # self.refresh_btn.clicked.connect(self._manual_refresh)
-        # controls_layout.addWidget(self.refresh_btn)
-
-
-
-
-        # controls_layout.addWidget(toolbar)
 
         layout.addWidget(toolbar)
 
