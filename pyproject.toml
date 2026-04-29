@@ -22,14 +22,16 @@ classifiers = [
 dependencies = [
     "pycore>=0.1.0",
     "numpy>=1.26",
+    "opencv-python",
+    "matplotlib",
+    "PyOpenGL",
+    "PyQt6",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
-    # Install pycore from source when working across both repos locally.
-    # pip install -e ../pycore -e .[dev]
 ]
 
 [project.urls]
