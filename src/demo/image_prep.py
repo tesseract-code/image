@@ -7,8 +7,8 @@ from PyQt6.QtCore import QThread
 from PyQt6.QtGui import QSurfaceFormat
 from PyQt6.QtWidgets import QMainWindow
 
-from image.demo.utils.create_image import create_rgb_checkered
-from image.demo.utils.image_generator import ImageGeneratorWorker
+from demo import create_rgb_checkered
+from demo import ImageGeneratorWorker
 from image.gl.utils import get_surface_format
 from image.gui.controller.overlay import OverlayImageWidgetController
 from qtcore.event import run_qt_app
