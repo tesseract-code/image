@@ -205,19 +205,6 @@ def create_parameter_row(param_name: str,
     label.setMinimumWidth(180)
     label.setWordWrap(True)
     row_layout.addWidget(label, alignment=Qt.AlignmentFlag.AlignLeft)
-
-    # Add stretch
-    # row_layout.addStretch()
-
-    # Create input widget
-
-    # Set consistent width for input widgets
-    # if not isinstance(widget, QCheckBox):
-    #     widget.setMinimumWidth(200)
-    #
-    # if isinstance(widget, QLabel):
-    #     widget.setAlignment(Qt.AlignmentFlag.AlignRight)
-
     row_layout.addWidget(widget, alignment=Qt.AlignmentFlag.AlignRight)
     return row_widget
 

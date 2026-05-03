@@ -19,12 +19,12 @@ from image.gui.item.histogram import HistogramController
 from image.gui.overlay.crop import CropView
 from image.gui.settings_ctrl import ControlPanel
 from image.gui.stack_view import OverlayStack, logger
+from image.model.cmap import apply_colormap_to_value
 from image.model.model import ImageDataModel
 from image.pipeline.stats import FrameStats
 from image.settings.base import ImageSettings
 from image.settings.pixels import PixelFormat
 from image.settings.roi import ROI
-from image.model.cmap import apply_colormap_to_value
 from pycore.log.ctx import with_logger
 
 # Default ROI dimensions on first load
@@ -149,19 +149,42 @@ class OverlayImageWidgetController(QObject):
 
         # Configure overlays
         self._overlay_stack.crosshair_manager.set_crosshair_color("orange")
-        self._overlay_stack.overlay.enable_center_crosshair(True)
+        self._overlay_stack.overlay.enable_center_crosshair(False)
         self._overlay_stack.overlay.lock_center_crosshair(True)
-        self._overlay_stack.overlay.enable_tracking_crosshair(True)
+        self._overlay_stack.overlay.enable_tracking_crosshair(False)
 
     def _connect_ui(self):
         """Connect UI signals to controller slots."""
         self._control_panel.roi_changed.connect(self._on_roi_changed)
-        self._control_panel.roi_visibility_changed.connect(self._on_roi_visibility_changed)
-        self._control_panel.colorbar_visibility_changed.connect(self._on_colorbar_visibility_changed)
+        self._control_panel.roi_visibility_changed.connect(
+            self._on_roi_visibility_changed)
+        self._control_panel.colorbar_visibility_changed.connect(
+            self._on_colorbar_visibility_changed)
 
-        self._overlay_stack.gl_viewer.frameChanged.connect(self._on_gl_texture_upload_event)
-        self._crop_view.joystick.movements_batched.connect(self._on_jostick_moves)
-        self._overlay_stack.mouse_pos_changed.connect(self._on_mouse_pos_changed)
+        # Colormap signals
+        self._control_panel.colormap_changed.connect(
+            self._on_colorbar_colormap_changed)
+        self._control_panel.colormap_enabled_changed.connect(
+            self._on_colormap_state_changed)
+
+        # Crosshair signals
+        self._control_panel.tracking_crosshair_visibility_changed.connect(
+            self._on_tracking_crosshair_changed)
+        self._control_panel.center_crosshair_visibility_changed.connect(
+            self._on_center_crosshair_changed)
+
+        # Display element signals
+        self._control_panel.histogram_visibility_changed.connect(
+            self._on_histogram_visibility_changed)
+        self._control_panel.axes_visibility_changed.connect(
+            self._on_axes_visibility_changed)
+
+        self._overlay_stack.gl_viewer.frameChanged.connect(
+            self._on_gl_texture_upload_event)
+        self._crop_view.joystick.movements_batched.connect(
+            self._on_jostick_moves)
+        self._overlay_stack.mouse_pos_changed.connect(
+            self._on_mouse_pos_changed)
 
     def _initialize_pipeline(self):
         """Initialize the async rendering pipeline."""
@@ -185,7 +208,8 @@ class OverlayImageWidgetController(QObject):
         """Handle pipeline state transitions."""
         if state == PipelineState.RUNNING:
             if not self._flow_control:
-                self._logger.debug("Starting FlowController (60fps update loop)")
+                self._logger.debug(
+                    "Starting FlowController (60fps update loop)")
                 self._flow_control = FlowController(
                     self._pipeline_ctrl.mailbox, fps=60
                 )
@@ -212,8 +236,8 @@ class OverlayImageWidgetController(QObject):
                 QRectF(
                     self._current_roi_settings.x,
                     self._current_roi_settings.y,
-                    self._current_roi_settings.width-1,
-                    self._current_roi_settings.height-1
+                    self._current_roi_settings.width - 1,
+                    self._current_roi_settings.height - 1
                 )
             )
 
@@ -252,39 +276,30 @@ class OverlayImageWidgetController(QObject):
         """Update tooltip with pixel value under mouse cursor."""
         if self._model.has_data():
             value = self._model.get_value_at(x, y, flip_x=False, flip_y=True)
-            print("RAW VALUE: ", value)
             if value is not None:
                 if self._settings.colormap_enabled:
-                    print("CMAP ENABLED")
                     value = apply_colormap_to_value(
                         value,
                         self._overlay_stack.gl_viewer._cmap_cache.get_lut(
                             self._settings.colormap_name),
-                    data_dtype=self._model.get_dtype())
-
-                    print("VALUE WITH CMAP: ", value)
+                        data_dtype=self._model.get_dtype())
 
         self._overlay_stack.update_tooltip(x, y, value)
 
     def _update_histogram(self):
         """
-        Update histogram widgets with current image data.
+        Update histogram widget with current image data.
 
         The image is flipped vertically to correct for OpenGL's bottom-left
         origin convention before histogram processing.
         """
         self._histogram_ctrl.process_image(np.flip(self._model.get_view(), 0))
-        self._histogram_ctrl.get_vertical_widget().setVisible(True)
-        self._histogram_ctrl.get_horizontal_widget().setVisible(True)
 
     def _update_colorbar(self):
-        """Update colorbar range and colormap to match current image."""
+        """Update colorbar range to match current image metadata."""
         metadata = self._model.get_metadata()
         self._colorbar.set_range(metadata.vmin, metadata.vmax)
-
-        if self._current_cmap != self._settings.colormap_name:
-            self._current_cmap = self._settings.colormap_name
-            self._colorbar.set_colormap(self._settings.colormap_name)
+        # Colormap name/reverse is now handled by the dedicated signal slot
 
     @pyqtSlot(FrameStats)
     def _on_gl_texture_upload_event(self, metadata: FrameStats):
@@ -294,9 +309,6 @@ class OverlayImageWidgetController(QObject):
         # shape is (height, width[, channels]) — Y maps to height, X to width
         self._axisY.setRange(0, metadata.shape[0] - 1)
         self._axisX.setRange(0, metadata.shape[1] - 1)
-
-        self._axisY.setVisible(True)
-        self._axisX.setVisible(True)
 
         self._update_histogram()
 
@@ -354,3 +366,51 @@ class OverlayImageWidgetController(QObject):
             self._histogram_ctrl.shutdown()
         if self._overlay_stack:
             self._overlay_stack.cleanup()
+
+    # ========================================================================
+    # NEW Slots for colormap changes
+    # ========================================================================
+
+    @pyqtSlot(str, bool)
+    def _on_colorbar_colormap_changed(self, name: str, reverse: bool):
+        """Update the colorbar colormap immediately when changed in UI."""
+        if self._colorbar is not None:
+            self._colorbar.set_colormap(name=name, reverse=reverse)
+            self._current_cmap = name
+
+    @pyqtSlot(bool)
+    def _on_colormap_state_changed(self, enabled: bool):
+        """Hide the colorbar when the colormap is disabled."""
+        if not enabled:
+            self._colorbar.setVisible(False)
+            self._update_colorbar()
+
+    # ========================================================================
+    # Crosshair slots
+    # ========================================================================
+
+    @pyqtSlot(bool)
+    def _on_tracking_crosshair_changed(self, visible: bool):
+        """Toggle the tracking crosshair on the overlay."""
+        self._overlay_stack.overlay.enable_tracking_crosshair(visible)
+
+    @pyqtSlot(bool)
+    def _on_center_crosshair_changed(self, visible: bool):
+        """Toggle the fixed center crosshair on the overlay."""
+        self._overlay_stack.overlay.enable_center_crosshair(visible)
+
+    # ========================================================================
+    # Display element slots
+    # ========================================================================
+
+    @pyqtSlot(bool)
+    def _on_histogram_visibility_changed(self, visible: bool):
+        """Show or hide the intensity histogram widgets."""
+        self._histogram_ctrl.get_vertical_widget().setVisible(visible)
+        self._histogram_ctrl.get_horizontal_widget().setVisible(visible)
+
+    @pyqtSlot(bool)
+    def _on_axes_visibility_changed(self, visible: bool):
+        """Show or hide the X/Y axis rulers."""
+        self._axisX.setVisible(visible)
+        self._axisY.setVisible(visible)

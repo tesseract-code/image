@@ -8,8 +8,8 @@ from typing import Tuple, Optional
 
 import numpy as np
 
-from image.io.config import LoadConfig
-from image.io.metadata import ImageMetadata
+from image.load.config import LoadConfig
+from image.load.metadata import ImageMetadata
 from image.settings.pixels import PixelFormat
 
 

@@ -26,6 +26,18 @@ class ControlPanel(NavigablePanel):
     roi_visibility_changed = pyqtSignal(bool)
     colorbar_visibility_changed = pyqtSignal(bool)
 
+    # Colormap signals
+    colormap_enabled_changed = pyqtSignal(bool)
+    colormap_changed = pyqtSignal(str, bool)   # name, reverse
+
+    # Crosshair signals (were emitted but never declared)
+    tracking_crosshair_visibility_changed = pyqtSignal(bool)
+    center_crosshair_visibility_changed = pyqtSignal(bool)
+
+    # Display element signals
+    histogram_visibility_changed = pyqtSignal(bool)
+    axes_visibility_changed = pyqtSignal(bool)
+
     def __init__(self, settings, image_viewer, parent=None):
         self.settings = settings
         self.image_viewer = image_viewer
@@ -522,14 +534,20 @@ class ControlPanel(NavigablePanel):
             if not checked:
                 self.colorbar_visible_switch.setChecked(False)
             self.colorbar_visible_switch.setEnabled(checked)
+            # NEW: emit signal
+            self.colormap_enabled_changed.emit(checked)
 
     def _on_colormap_changed(self, name: str):
         if not self.updating_ui:
             self.settings.update_setting('colormap_name', name)
+            reverse = self.colormap_reverse_switch.isChecked()
+            self.colormap_changed.emit(name, reverse)
 
     def _on_colormap_reverse_changed(self, checked: bool):
         if not self.updating_ui:
             self.settings.update_setting('colormap_reverse', checked)
+            name = self.colormap_combo.currentText()
+            self.colormap_changed.emit(name, checked)
 
     def _on_colorbar_visible_changed(self, checked: bool):
         if not self.updating_ui:
@@ -597,10 +615,12 @@ class ControlPanel(NavigablePanel):
     def _on_histogram_enabled_changed(self, checked: bool):
         if not self.updating_ui:
             self.settings.update_setting('histogram_enabled', checked)
+            self.histogram_visibility_changed.emit(checked)
 
     def _on_axes_enabled_changed(self, checked: bool):
         if not self.updating_ui:
             self.settings.update_setting('axes_enabled', checked)
+            self.axes_visibility_changed.emit(checked)
 
     def _on_interpolation_changed(self, checked: bool):
         if not self.updating_ui:

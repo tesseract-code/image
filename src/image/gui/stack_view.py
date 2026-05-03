@@ -8,7 +8,6 @@ from PyQt6.QtCore import pyqtSignal, pyqtSlot, Qt, QTimer, QRectF, QSize
 from PyQt6.QtGui import QSurfaceFormat
 from PyQt6.QtWidgets import QGraphicsScene, QFrame
 
-from image.demo.utils.create_image import create_rgb_checkered
 from image.gl.utils import get_surface_format
 from image.gl.view import (GLFrameViewer)
 from image.gui.overlay.view import (
@@ -216,9 +215,6 @@ class OverlayStack(QFrame):
         on the viewport midpoint rather than the raw image dimensions, keeping
         the two coordinate systems consistent.
         """
-        # FIX 6: Use viewport centre instead of image dimensions. Centering on
-        # image pixel coords was incorrect because the scene rect is always set
-        # to viewport dimensions (see _update_scene_rect_to_viewport).
         self.settings.update_setting('zoom', 1.0)
         self.settings.update_setting('pan_x', 0.0)
         self.settings.update_setting('pan_y', 0.0)
@@ -232,7 +228,6 @@ class OverlayStack(QFrame):
     @pyqtSlot(str)
     def _on_gl_error(self, error_msg: str):
         """Handle GL errors"""
-        # FIX 9: Use logger instead of print.
         logger.error("GL error: %s", error_msg)
 
     def changeEvent(self, event):
@@ -259,9 +254,6 @@ class OverlayStack(QFrame):
 
         self._position_layers()
 
-        # FIX 4: Actually defer the work with a timer. The _pending_resize
-        # guard now correctly suppresses redundant timer registrations while
-        # a deferred call is already queued.
         if self._pending_resize:
             return
 
@@ -453,38 +445,11 @@ class OverlayStack(QFrame):
         if self.overlay.scene():
             scene = self.overlay.scene()
             info['scene_items_count'] = len(scene.items())
-            info['scene_rect'] = (scene.sceneRect().x(), scene.sceneRect().y(),
+            info['scene_rect'] = (scene.sceneRect().x(),
+                                  scene.sceneRect().y(),
                                   scene.sceneRect().width(),
                                   scene.sceneRect().height())
 
         info.update(self.crosshair_manager.get_diagnostics())
 
         return info
-
-
-def main():
-    app = QtWidgets.QApplication([])
-    QSurfaceFormat.setDefaultFormat(get_surface_format())
-
-    settings = ImageSettings()
-    widget = OverlayStack(settings=settings)
-    widget.show()
-
-    s = timeit.default_timer()
-    arr = create_rgb_checkered()
-    processing_t = (timeit.default_timer() - s) * 1000
-    meta = get_frame_stats(arr, processing_t)
-
-    widget.gl_viewer.present(arr, meta, PixelFormat.RGB)
-    widget.enable_tracking_crosshair(True)
-    widget.enable_center_crosshair(True)
-    widget.addRectROI(QRectF(0, 0, 127, 127))
-    widget.setFixedSize(QSize(1024, 1024))
-    widget.overlay.setFixedSize(QSize(1024, 1024))
-    widget.fit_to_scene()
-    app.exec()
-
-
-if __name__ == '__main__':
-    logger.root.setLevel(logging.CRITICAL)
-    main()

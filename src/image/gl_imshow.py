@@ -425,10 +425,13 @@ class GLImageShow(QWidget):
             self._toolbar.reposition()
             self._toolbar.raise_()
 
-    def closeEvent(self, event) -> None:
+    def cleanup(self):
         if self.viewer is not None:
             self.viewer.cleanup()
             self.viewer = None
+
+    def closeEvent(self, event) -> None:
+        self.cleanup()
         super().closeEvent(event)
 
 

@@ -54,8 +54,6 @@ import OpenGL
 
 _DEBUG_ENV: bool = os.environ.get("GL_DEBUG_MODE", "0") == "1"
 
-# ERROR_ON_COPY catches accidental Python-object copies of GPU data; always on.
-OpenGL.ERROR_ON_COPY = True
 
 if _DEBUG_ENV:
     # Both flags must be set together: ERROR_CHECKING enables the per-call
@@ -63,10 +61,13 @@ if _DEBUG_ENV:
     # logging system rather than printing to stderr.
     OpenGL.ERROR_CHECKING = True
     OpenGL.ERROR_LOGGING = True
+    # ERROR_ON_COPY catches accidental Python-object copies of GPU data
+    OpenGL.ERROR_ON_COPY = True
 else:
     # Disable in non-debug builds to eliminate per-call glGetError overhead.
     OpenGL.ERROR_CHECKING = False
     OpenGL.ERROR_LOGGING = False
+    OpenGL.ERROR_ON_COPY = False
 
 try:
     from OpenGL import GL as _GL
@@ -76,6 +77,7 @@ except ImportError as e:
         "PyOpenGL not found. Install it with: pip install PyOpenGL"
     ) from e
 
+_context_initialized: bool = False
 
 def initialize_context() -> None:
     """
@@ -100,6 +102,11 @@ def initialize_context() -> None:
     after the config is written so the KHR_debug callback is active for all
     subsequent GL calls.
     """
+    global _context_initialized
+    if _context_initialized:
+        return
+    _context_initialized = True
+    
     logger = logging.getLogger("GLBackend")
 
     # macOS caps at GL 4.1 and Apple never shipped GL_ARB_texture_storage.
@@ -183,4 +190,3 @@ def initialize_context() -> None:
 
 
 GL = _GL
-GLU = _GLU

@@ -2,10 +2,10 @@ from pathlib import Path
 from typing import override, Tuple, Optional
 
 import numpy as np
-from image.io.config import LoadConfig
+from image.load.config import LoadConfig
 
-from image.io.interface import ImageLoaderAdapter
-from image.io.metadata import ImageMetadata
+from image.load.interface import ImageLoaderAdapter
+from image.load.metadata import ImageMetadata
 from image.settings.pixels import PixelFormat
 
 

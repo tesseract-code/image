@@ -13,9 +13,9 @@ from typing import Optional, Union
 import numpy as np
 
 from image.settings.pixels import PixelFormat
-from image.io.config import LoadConfig, ImageReadFlags
-from image.io.factory import get_adapter, Backend
-from image.io.metadata import ImageMetadata
+from image.load.config import LoadConfig, ImageReadFlags
+from image.load.factory import get_adapter, Backend
+from image.load.metadata import ImageMetadata
 from image.utils.data import PixelBuffer
 
 logger = logging.getLogger(__name__)

@@ -1,24 +1,24 @@
 """
-widget.py
+playback.py
 =========
 OpenGL-accelerated colorbar widget with software-rendered tick labels.
 
 Architecture
 ------------
 The widget is split into two rendering passes that share the same
-:class:`QPainter` target:
+`QPainter` target:
 
 1. **GL pass** (``beginNativePainting`` … ``endNativePainting``)
-   :class:`GradientRenderer` draws the LUT gradient strip via a fullscreen
+   `GradientRenderer` draws the LUT gradient strip via a fullscreen
    quad on an OpenGL 4.1 Core context.  Qt suspends its own GL state around
    this block so native calls are safe.
 
 2. **Software pass** (plain QPainter)
-   :class:`TickRenderer` rasterises tick lines and labels into a transparent
-   :class:`QImage` and blits it over the GL output.  This sidesteps macOS
+   `TickRenderer` rasterizes tick lines and labels into a transparent
+   `QImage` and blits it over the GL output.  This sidesteps macOS
    OpenGL text quality issues entirely.
 
-Configuration is immutable (:class:`ColorBarConfig`).  Every public setter
+Configuration is immutable (`ColorBarConfig`).  Every public setter
 rebuilds the frozen dataclass so there is a single, auditable source of truth
 for widget state.  ``update()`` is called by every setter; callers never need
 to trigger repaints manually.
@@ -125,7 +125,7 @@ class ColorBarConfig:
         ``Horizontal`` → gradient runs left-to-right.
     tick_position:
         Which side of the strip ticks protrude from.
-        See :class:`TickPosition` for the per-orientation meaning.
+        See `TickPosition` for the per-orientation meaning.
     tick_config:
         Appearance settings for tick marks and labels.
 
@@ -156,7 +156,7 @@ class ColorbarWidget(QOpenGLWidget):
     A hardware-accelerated colorbar with pixel-perfect software tick labels.
 
     The gradient is rendered via OpenGL; tick marks and labels are composited
-    on top using a :class:`QPainter` / :class:`QImage` proxy to guarantee
+    on top using a `QPainter` / `QImage` proxy to guarantee
     legible, hinted text on every platform.
 
     Parameters
@@ -190,8 +190,8 @@ class ColorbarWidget(QOpenGLWidget):
         Configure widget attributes and request an OpenGL 4.1 Core context.
 
         ``WA_AlwaysStackOnTop`` ensures the colorbar renders above sibling
-        widgets that share the same window.  ``WA_TranslucentBackground``
-        allows the transparent GL clear colour to show through the Qt
+        widget that share the same window.  ``WA_TranslucentBackground``
+        allows the transparent GL clear color to show through the Qt
         compositor.
         """
         self._update_size_policy()
@@ -264,10 +264,10 @@ class ColorbarWidget(QOpenGLWidget):
 
         Pass 1 — OpenGL gradient (native painting block):
             Sets blend state, clears to transparent, and delegates to
-            :class:`GradientRenderer`.
+            `GradientRenderer`.
 
         Pass 2 — Software ticks (QPainter):
-            Creates a :class:`TickRenderer`, computes tick positions, and
+            Creates a `TickRenderer`, computes tick positions, and
             blits them over the GL output.
 
         Any GL error raised by the gradient renderer is caught, logged, and
@@ -291,7 +291,7 @@ class ColorbarWidget(QOpenGLWidget):
 
     def _paint_gl_gradient(self) -> None:
         """
-        Configure GL state and delegate to :class:`GradientRenderer`.
+        Configure GL state and delegate to `GradientRenderer`.
 
         The viewport is set in *physical* pixels (logical size × DPR) so
         the gradient fills the widget exactly on high-DPI displays.
@@ -327,9 +327,9 @@ class ColorbarWidget(QOpenGLWidget):
 
     def _paint_ticks(self, painter: QPainter) -> None:
         """
-        Build a :class:`TickRenderer`, compute tick data, and blit to ``painter``.
+        Build a `TickRenderer`, compute tick data, and blit to ``painter``.
 
-        A fresh :class:`TickRenderer` is constructed each frame because
+        A fresh `TickRenderer` is constructed each frame because
         ``vmin`` / ``vmax`` may change between frames and the renderer is
         lightweight (no GPU resources).
         """
@@ -456,7 +456,7 @@ class ColorbarWidget(QOpenGLWidget):
         Parameters
         ----------
         name:
-            Key recognised by :class:`ColormapModel`.
+            Key recognized by `ColormapModel`.
         reverse:
             When ``True`` the gradient runs high-to-low.
         """
@@ -527,7 +527,7 @@ class ColorbarWidget(QOpenGLWidget):
         """
         Move ticks to the opposite side of the gradient strip.
 
-        See :class:`TickPosition` for the per-orientation interpretation.
+        See `TickPosition` for the per-orientation interpretation.
         """
         self._config = replace(self._config, tick_position=position)
         self.update()
@@ -543,7 +543,7 @@ class ColorbarWidget(QOpenGLWidget):
 
     def _update_tick_config(self, **kwargs: object) -> None:
         """
-        Rebuild :class:`TickConfig` from the current config plus ``kwargs``.
+        Rebuild `TickConfig` from the current config plus ``kwargs``.
 
         Uses ``dataclasses.replace`` so all unspecified fields are preserved
         without manual forwarding of every attribute.
@@ -551,7 +551,7 @@ class ColorbarWidget(QOpenGLWidget):
         Parameters
         ----------
         **kwargs:
-            Any subset of :class:`TickConfig` field names and their new values.
+            Any subset of `TickConfig` field names and their new values.
         """
         new_tick_cfg = replace(self._config.tick_config, **kwargs)
         self._config = replace(self._config, tick_config=new_tick_cfg)

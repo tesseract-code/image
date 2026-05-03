@@ -151,7 +151,7 @@ class GLFrameViewer(QOpenGLWidget):
             self,
             settings: ImageSettings,
             buffer_strategy: PBOBufferingStrategy = PBOBufferingStrategy.DOUBLE,
-            monitor_performance: bool = False,
+            monitor_performance: bool = True,
             parent: Optional[QWidget] = None,
     ) -> None:
         """

@@ -581,7 +581,7 @@ class HistogramController(QObject):
         self._last_profile = None
         self._async_profile.shutdown()
 
-        # Pass empty numpy arrays to clear the widgets
+        # Pass empty numpy arrays to clear the widget
         empty = np.array([])
         self._h_widget.set_data(empty, (0, 1), False)
         self._v_widget.set_data(empty, (0, 1), False)

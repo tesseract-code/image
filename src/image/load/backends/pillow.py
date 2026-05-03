@@ -5,9 +5,9 @@ from typing import Tuple, Optional
 
 import numpy as np
 
-from image.io.config import LoadConfig, ImageReadFlags
-from image.io.interface import ImageLoaderAdapter
-from image.io.metadata import ImageMetadata
+from image.load.config import LoadConfig, ImageReadFlags
+from image.load.interface import ImageLoaderAdapter
+from image.load.metadata import ImageMetadata
 from image.settings.pixels import PixelFormat
 
 try:

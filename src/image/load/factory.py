@@ -2,10 +2,10 @@ import logging
 from enum import unique, StrEnum
 from typing import Dict, Optional
 
-from image.io.backends.numpy import NumpyAdapter
-from image.io.backends.opencv import Cv2Adapter
-from image.io.backends.pillow import PillowAdapter
-from image.io.interface import ImageLoaderAdapter
+from image.load.backends.numpy import NumpyAdapter
+from image.load.backends.opencv import Cv2Adapter
+from image.load.backends.pillow import PillowAdapter
+from image.load.interface import ImageLoaderAdapter
 
 logger = logging.getLogger(__name__)
 

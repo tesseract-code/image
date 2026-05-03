@@ -109,8 +109,8 @@ class TickConfig:
     length:      float = 5.0
     spacing:     float = 3.0
     font_family: str   = "Arial"
-    font_size:   int   = 9
-    color:       str   = "palette(text)"
+    font_size:   int   = 16
+    color:       str   = "#F4511E"
 
     def __post_init__(self) -> None:
         if self.count < 1:

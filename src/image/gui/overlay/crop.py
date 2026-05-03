@@ -4,15 +4,13 @@ from typing import Optional
 import numpy as np
 from PyQt6.QtCore import Qt, pyqtSlot, QSize
 from PyQt6.QtGui import QColor, QPalette
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QHBoxLayout,
-                             QFrame,
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QFrame,
                              QComboBox, QScrollArea, QSizePolicy, QToolBar)
 
 from cross_platform.qt6_utils.qtgui.src.qtgui.drop_down import Dropdown
 from cross_platform.qt6_utils.qtgui.src.qtgui.joystick import JoystickWidget
-from cross_platform.qt6_utils.qtgui.src.qtgui.toolbar import (configure_toolbar_style, StyledToolBar)
 from cross_platform.dev.icons_legacy.svg_path import get_icon, IconType
-from image.gui.graphics_view import GraphicsImageView
+from image.gui.imageQt import GraphicsImageView
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +43,7 @@ class CropView(QFrame):
         self.info_label = QLabel("No active ROI")
         self.info_label.setWordWrap(False)
 
-        configure_toolbar_style()
-        toolbar = StyledToolBar()
+        toolbar = QToolBar()
 
         toolbar.addWidget(self.info_label)
 
