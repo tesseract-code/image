@@ -3,7 +3,7 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtGui import QPen
 from PyQt6.QtWidgets import QGraphicsLineItem, QGraphicsItemGroup
 
-from cross_platform.qt6_utils.qtgui.src.qtgui.color_picker import to_qcolor
+from qtgui.color_picker import to_qcolor
 from pycore.log.ctx import with_logger
 
 

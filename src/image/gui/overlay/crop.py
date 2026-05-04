@@ -2,15 +2,15 @@ import logging
 from typing import Optional
 
 import numpy as np
-from PyQt6.QtCore import Qt, pyqtSlot, QSize
-from PyQt6.QtGui import QColor, QPalette
+from PyQt6.QtCore import Qt, pyqtSlot
+from PyQt6.QtGui import QPixmap, QIcon
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QFrame,
                              QComboBox, QScrollArea, QSizePolicy, QToolBar)
 
-from cross_platform.qt6_utils.qtgui.src.qtgui.drop_down import Dropdown
-from cross_platform.qt6_utils.qtgui.src.qtgui.joystick import JoystickWidget
-from cross_platform.dev.icons_legacy.svg_path import get_icon, IconType
 from image.gui.imageQt import GraphicsImageView
+from qtgui.drop_down import Dropdown
+from qtgui.joystick import JoystickWidget
+from qtgui.pixmap import colorize_pixmap
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +52,6 @@ class CropView(QFrame):
                                          QSizePolicy.Policy.Preferred))
         toolbar.addWidget(spacer)
 
-
-
         # Magnification control
         toolbar.addWidget(QLabel("Mag:"))
         self.mag_combo = QComboBox()
@@ -75,12 +73,10 @@ class CropView(QFrame):
         layout.addWidget(graphics_scroll, 1)
 
         # Joystick control
-        joystick_dropdown = Dropdown(title="Positioner", title_icon=get_icon(
-            IconType.LINE_GAME_PAD, QSize(256, 256), QColor(self.palette(
-
-            ).color(QPalette.ColorRole.ButtonText).name()
-                )),
-        scroll_area=True)
+        joystick_dropdown = Dropdown(title="Positioner", title_icon=QIcon(
+            colorize_pixmap(QPixmap("line-icons:gamepad-line.svg"),
+                            self.palette().buttonText().color())),
+                                     scroll_area=True)
         self.joystick = JoystickWidget()
         joystick_dropdown.add_content_widget(self.joystick)
         layout.addWidget(joystick_dropdown)

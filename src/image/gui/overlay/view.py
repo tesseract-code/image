@@ -1,11 +1,5 @@
 """
-SynchableGraphicsView - Complete Fixed Version
-
-Key fixes:
-1. Removed fit_to_scene() from resizeEvent (let parent handle sizing)
-2. Scene rect managed by parent (LayeredImageView)
-3. Proper crosshair updates on transform/scroll changes
-4. Clean ROI management
+SynchableGraphicsView
 """
 
 from PyQt6 import QtWidgets, QtGui
