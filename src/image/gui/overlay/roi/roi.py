@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (QGraphicsEllipseItem, QGraphicsRectItem,
                              QGraphicsLineItem, QGraphicsPolygonItem,
                              QGraphicsItem, QGraphicsView)
 
-from cross_platform.qt6_utils.qtgui.src.qtgui.joystick import compute_joystick_displacement
+from qtgui.joystick import compute_joystick_displacement
 
 def _create_roi_pen(high_dpi: bool = False) -> QPen:
     """Create the standard ROI pen."""
