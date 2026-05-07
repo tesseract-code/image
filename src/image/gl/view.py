@@ -168,6 +168,7 @@ class GLFrameViewer(QOpenGLWidget):
         super().__init__(parent=parent)
 
         # Warm up the global thread-pool used by async PBO transfers.
+
         get_global_executor(max_workers=4)
 
         self.settings: ImageSettings = settings
@@ -193,6 +194,7 @@ class GLFrameViewer(QOpenGLWidget):
 
         # GL state shadow
         self._gl_state = GLState()
+        self._cleaned_up = False
 
         # Pending upload bookkeeping
         self._frame_data: Optional[np.ndarray] = None
@@ -1484,6 +1486,11 @@ class GLFrameViewer(QOpenGLWidget):
         if not self._gl_state.initialized:
             logger.debug("Cleanup called but GL not initialised — skipping")
             return
+
+        if self._cleaned_up:
+            return
+
+        self._cleaned_up = True
 
         logger.debug("Starting GL resource cleanup")
 
