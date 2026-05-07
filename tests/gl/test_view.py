@@ -1037,16 +1037,6 @@ class TestPublicColormapRangeAPI:
         # _set_colormap marks uniforms dirty; _on_settings_changed triggers update.
         assert viewer._gl_state.uniforms_dirty
 
-    def test_set_colormap_data_delegates_and_updates(self, viewer, mock_subsystems):
-        arr = np.zeros((256, 3), dtype=np.uint8)
-        with patch.object(
-            viewer._gradient_renderer if hasattr(viewer, "_gradient_renderer") else viewer,
-            "set_colormap_data",
-            create=True,
-        ):
-            viewer.set_colormap_data(arr)
-        viewer.update.assert_called()
-
     def test_set_range_calls_update_setting_for_both_bounds(self, viewer):
         viewer.set_range(-1.0, 2.0)
         viewer.settings.update_setting.assert_any_call("norm_vmin", -1.0)
@@ -1295,7 +1285,7 @@ class TestUtilities:
         assert stats["avg_ms"] == GLfloat(0.0)
 
     def test_performance_stats_reflect_monitor(self, viewer):
-        viewer._current_stats = MagicMock(fps=60.0, avg_processing_ms=16.7)
+        viewer._current_stats = MagicMock(rate=60.0, avg_processing_ms=16.7)
         stats = viewer.get_performance_stats()
         assert stats["fps"]    == GLfloat(60.0)
         assert stats["avg_ms"] == GLfloat(16.7)

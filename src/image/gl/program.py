@@ -261,6 +261,9 @@ def create_program(
         GL.glDeleteShader(fragment_shader)
         raise
 
+    GL.glDeleteShader(vertex_shader)
+    GL.glDeleteShader(fragment_shader)
+
     logger.info("Shader program created successfully (id=%d)", program)
     return program
 

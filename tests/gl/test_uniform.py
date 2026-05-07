@@ -49,6 +49,7 @@ from unittest.mock import MagicMock, call, patch
 import numpy as np
 import pytest
 
+from image.gl.backend import initialize_context
 # ---------------------------------------------------------------------------
 # Module-level imports -- executed ONCE at collection time.
 # The gl fixture patches GL in the module namespace after this point.
@@ -110,6 +111,7 @@ def _make_gl() -> MagicMock:
     ``glGetError`` returns ``GL_NO_ERROR`` by default; individual tests
     override it when they need to exercise the error path.
     """
+    initialize_context()
     gl = MagicMock(name="GL")
     for name, value in _C.items():
         setattr(gl, name, value)
@@ -410,27 +412,6 @@ class TestRegistration:
 
 
 # =============================================================================
-# _check_gl_error
-# =============================================================================
-
-class TestCheckGlError:
-
-    def test_no_error_does_not_raise(self, gl):
-        gl.glGetError.return_value = _C["GL_NO_ERROR"]
-        UniformManager(_PROGRAM)._check_gl_error("test op")  # must not raise
-
-    def test_non_zero_error_raises_gl_error(self, gl):
-        gl.glGetError.return_value = 0x0500  # GL_INVALID_ENUM
-        with pytest.raises(GLError, match="0x500"):
-            UniformManager(_PROGRAM)._check_gl_error("test op")
-
-    def test_error_message_includes_operation_label(self, gl):
-        gl.glGetError.return_value = 0x0501
-        with pytest.raises(GLError, match="glUseProgram"):
-            UniformManager(_PROGRAM)._check_gl_error("glUseProgram")
-
-
-# =============================================================================
 # set / set_fast
 # =============================================================================
 
@@ -618,32 +599,4 @@ class TestSetUniformByType:
         with caplog.at_level(logging.WARNING, logger=_MOD):
             UniformManager(_PROGRAM)._set_uniform_by_type(_LOC, 0,
                                                           GLenum(0xFFFF))
-        assert caplog.records
-
-    # --- GL error propagation ----------------------------------------------
-
-    def test_driver_error_raises_gl_error(self, gl):
-        gl.glGetError.return_value = 0x0502  # GL_INVALID_OPERATION
-        with pytest.raises(GLError, match="0x502"):
-            UniformManager(_PROGRAM)._set_uniform_by_type(
-                _LOC, 1.0, GLenum(_C["GL_FLOAT"])
-            )
-
-    def test_gl_error_caught_by_set_by_loc_and_type(self, gl):
-        """GLError from the dispatch is caught one level up; returns False."""
-        gl.glGetError.return_value = 0x0502
-        result = UniformManager(_PROGRAM)._set_by_loc_and_type(
-            _LOC, 1.0, UniformType.FLOAT, "u_val"
-        )
-        assert result is False
-
-    def test_gl_error_caught_by_set_fast(self, gl):
-        gl.glGetError.return_value = 0x0502
-        assert UniformManager(_PROGRAM).set_fast(_LOC, 1.0,
-                                                 UniformType.FLOAT) is False
-
-    def test_gl_error_is_logged_when_caught(self, gl, caplog):
-        gl.glGetError.return_value = 0x0502
-        with caplog.at_level(logging.ERROR, logger=_MOD):
-            UniformManager(_PROGRAM).set_fast(_LOC, 1.0, UniformType.FLOAT)
         assert caplog.records

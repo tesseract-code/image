@@ -218,6 +218,7 @@ def gl_error_check(
             # error was already logged in the loop above.
             n = len(errors)
             detail = "\n  ".join(errors)
+            logger.error(f"{n} OpenGL error{'s' if n != 1 else ''} during '{operation}':\n  {detail}")
             raise exception_class(
                 f"{n} OpenGL error{'s' if n != 1 else ''} during '{operation}':\n  {detail}"
             )

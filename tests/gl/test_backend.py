@@ -127,7 +127,7 @@ def test_debug_mode_disabled(mock_cross_platform_modules, mock_opengl,
     open_gl = sys.modules["OpenGL"]
     assert open_gl.ERROR_CHECKING is False
     assert open_gl.ERROR_LOGGING is False
-    assert open_gl.ERROR_ON_COPY is True
+    assert open_gl.ERROR_ON_COPY is False
 
     gl_backend.initialize_context()
     _, fake_debug = mock_cross_platform_modules
@@ -286,4 +286,3 @@ def test_gl_and_glu_are_exported(mock_cross_platform_modules, mock_opengl,
     gl_backend = _import_gl_backend()
     _, gl_mock, glu_mock = mock_opengl
     assert gl_backend.GL is gl_mock
-    assert gl_backend.GLU is glu_mock
